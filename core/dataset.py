@@ -78,6 +78,13 @@ class Dataset(object):
             batch_mbboxes = np.zeros((self.batch_size, self.max_bbox_per_scale, 4))
             batch_lbboxes = np.zeros((self.batch_size, self.max_bbox_per_scale, 4))
 
+            batch_noobj_mask_sb = np.zeros((self.batch_size, self.train_output_sizes[0], self.train_output_sizes[0],
+                                          self.anchor_per_scale))
+            batch_noobj_mask_mb = np.zeros((self.batch_size, self.train_output_sizes[1], self.train_output_sizes[1],
+                                          self.anchor_per_scale))
+            batch_noobj_mask_lb = np.zeros((self.batch_size, self.train_output_sizes[2], self.train_output_sizes[2],
+                                          self.anchor_per_scale))
+
             num = 0
             if self.batch_count < self.num_batchs:
                 while num < self.batch_size:
@@ -85,7 +92,7 @@ class Dataset(object):
                     if index >= self.num_samples: index -= self.num_samples
                     annotation = self.annotations[index]
                     image, bboxes = self.parse_annotation(annotation)
-                    label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes = self.preprocess_true_boxes(bboxes)
+                    label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes, no_obj_mask = self.preprocess_true_boxes(bboxes)
 
                     batch_image[num, :, :, :] = image
                     batch_label_sbbox[num, :, :, :, :] = label_sbbox
@@ -94,10 +101,16 @@ class Dataset(object):
                     batch_sbboxes[num, :, :] = sbboxes
                     batch_mbboxes[num, :, :] = mbboxes
                     batch_lbboxes[num, :, :] = lbboxes
+
+                    batch_noobj_mask_sb[num, :, :, :] = no_obj_mask[0]
+                    batch_noobj_mask_mb[num, :, :, :] = no_obj_mask[1]
+                    batch_noobj_mask_lb[num, :, :, :] = no_obj_mask[2]
+
                     num += 1
                 self.batch_count += 1
-                return batch_image, batch_label_sbbox, batch_label_mbbox, batch_label_lbbox, \
-                       batch_sbboxes, batch_mbboxes, batch_lbboxes
+                return batch_image, [batch_label_sbbox, batch_label_mbbox, batch_label_lbbox], \
+                       [batch_sbboxes, batch_mbboxes, batch_lbboxes], \
+                       [batch_noobj_mask_sb, batch_noobj_mask_mb, batch_noobj_mask_lb]
             else:
                 self.batch_count = 0
                 np.random.shuffle(self.annotations)
@@ -200,13 +213,17 @@ class Dataset(object):
 
         return inter_area / union_area
 
+    # IOU threshold used in this method is 0.3
     def preprocess_true_boxes(self, bboxes):
 
         # label here loop over small-box labels, med-box labels, large-box labels
         # each element in label is (size, size, 3, 85)
         label = [np.zeros((self.train_output_sizes[i], self.train_output_sizes[i], self.anchor_per_scale,
                            5 + self.num_classes)) for i in range(3)]
-        
+
+        no_obj_mask = [np.zeros((self.train_output_sizes[i], self.train_output_sizes[i], self.anchor_per_scale))
+                    for i in range(3)]
+
         # each ele here is (150, 4)
         bboxes_xywh = [np.zeros((self.max_bbox_per_scale, 4)) for _ in range(3)]
         # counter to see how many boxes in each category finally
@@ -235,21 +252,30 @@ class Dataset(object):
             # the i here loops over small-box, mid-box, big-box
             for i in range(3):
                 anchors_xywh = np.zeros((self.anchor_per_scale, 4))
-                anchors_xywh[:, 0:2] = np.floor(bbox_xywh_scaled[i, 0:2]).astype(np.int32) + 0.5
+                #anchors_xywh[:, 0:2] = np.floor(bbox_xywh_scaled[i, 0:2]).astype(np.int32) + 0.5
+                anchors_xywh[:, 0:2] = bbox_xywh_scaled[i, 0:2]
                 anchors_xywh[:, 2:4] = self.anchors[i]
 
                 # compute the iou for three anchors in same size (small, med, large)
                 iou_scale = self.bbox_iou(bbox_xywh_scaled[i][np.newaxis, :], anchors_xywh)
                 iou.append(iou_scale)
-                iou_mask = iou_scale > 0.3
+                #iou_mask = iou_scale > 0.3
+                iou_mask = iou_scale > 0.5
 
+                
                 if np.any(iou_mask):
                     xind, yind = np.floor(bbox_xywh_scaled[i, 0:2]).astype(np.int32)
 
-                    label[i][yind, xind, iou_mask, :] = 0
-                    label[i][yind, xind, iou_mask, 0:4] = bbox_xywh
-                    label[i][yind, xind, iou_mask, 4:5] = 1.0
-                    label[i][yind, xind, iou_mask, 5:] = smooth_onehot
+                    max_iou_idx = np.argmax(iou_scale)
+                    #label[i][yind, xind, iou_mask, :] = 0
+                    #label[i][yind, xind, iou_mask, 0:4] = bbox_xywh
+                    #label[i][yind, xind, iou_mask, 4:5] = 1.0
+                    #label[i][yind, xind, iou_mask, 5:] = smooth_onehot
+
+                    label[i][yind, xind, max_iou_idx, :] = 0
+                    label[i][yind, xind, max_iou_idx, 0:4] = bbox_xywh
+                    label[i][yind, xind, max_iou_idx, 4:5] = 1.0
+                    label[i][yind, xind, max_iou_idx, 5:] = smooth_onehot
 
                     # add this new found box to bboxes_xywh collection
                     bbox_ind = int(bbox_count[i] % self.max_bbox_per_scale)
@@ -274,13 +300,28 @@ class Dataset(object):
 
                 bbox_ind = int(bbox_count[best_detect] % self.max_bbox_per_scale)
                 bboxes_xywh[best_detect][bbox_ind, :4] = bbox_xywh
-                bbox_count[best_detect] += 1
-        
+                bbox_count[best_detect] += 1 
+
+                for i in range(len(iou)):
+                    xind, yind = np.floor(bbox_xywh_scaled[i, 0:2]).astype(np.int32)
+                    # hardcode the threshold as 0.3
+                    iou_less_mask = iou[i] < 0.3
+                    no_obj_mask[i][yind, xind, iou_less_mask] = 1.0
+
+                no_obj_mask[best_detect][yind, xind, best_anchor] = 0.
+
+            else:
+                for i in range(len(iou)):
+                    xind, yind = np.floor(bbox_xywh_scaled[i, 0:2]).astype(np.int32)
+                    # hardcode the threshold as 0.3
+                    iou_less_mask = iou[i] < 0.3
+                    no_obj_mask[i][yind, xind, iou_less_mask] = 1.0
+
         # each item here is (size, size, 3, 85) and there are 3 ele
         label_sbbox, label_mbbox, label_lbbox = label
         # each item here is (150, 4), 4-> (x,y,w,h)
         sbboxes, mbboxes, lbboxes = bboxes_xywh
-        return label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes
+        return label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes, no_obj_mask
 
     def __len__(self):
         return self.num_batchs

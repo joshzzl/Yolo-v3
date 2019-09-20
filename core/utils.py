@@ -21,6 +21,14 @@ from seaborn import color_palette
 import cv2
 
 
+def construct_feed_dict(placeholders, nobj_s, nobj_m, nobj_l):
+    """Construct feed dictionary."""
+    feed_dict = dict()
+    feed_dict.update({placeholders['noobj_sb']: nobj_s})
+    feed_dict.update({placeholders['noobj_mb']: nobj_m})
+    feed_dict.update({placeholders['noobj_lb']: nobj_l})
+    return feed_dict
+
 def load_images(img_names, model_size):
     """Loads images in a 4D array.
     Args:

@@ -20,7 +20,8 @@ _ANCHORS = [(10, 13), (16, 30), (33, 23),
 class Yolo_v3:
     # You only look once v3
 
-    def __init__(self, inputs, trainable, n_classes, model_size, 
+    def __init__(self, inputs, mask_placeholders, 
+                 trainable, n_classes, model_size, 
                  #max_output_size, iou_threshold, confidence_threshold, 
                  data_format='channels_last'):
         '''
@@ -38,6 +39,7 @@ class Yolo_v3:
             else:
                 data_format = 'channels_last'
 
+        self.mask_placeholders = mask_placeholders
         self.n_classes = n_classes
         self.model_size = model_size
         #self.max_output_size = max_output_size
@@ -185,15 +187,17 @@ class Yolo_v3:
         inter_section = tf.maximum(right_down - left_up, 0.0)
         inter_area = inter_section[..., 0] * inter_section[..., 1]
         union_area = boxes1_area + boxes2_area - inter_area
-        iou = inter_area / union_area
+        iou = tf.div_no_nan(inter_area, union_area)
+        area_ar = [boxes1_area, boxes2_area, inter_area, union_area]
+
 
         enclose_left_up = tf.minimum(boxes1[..., :2], boxes2[..., :2])
         enclose_right_down = tf.maximum(boxes1[..., 2:], boxes2[..., 2:])
         enclose = tf.maximum(enclose_right_down - enclose_left_up, 0.0)
         enclose_area = enclose[..., 0] * enclose[..., 1]
-        giou = iou - 1.0 * (enclose_area - union_area) / enclose_area
+        giou = iou - 1.0 * tf.div_no_nan((enclose_area - union_area), enclose_area)
 
-        return giou
+        return giou, iou, area_ar
 
     def bbox_iou(self, boxes1, boxes2):
 
@@ -211,7 +215,7 @@ class Yolo_v3:
         inter_section = tf.maximum(right_down - left_up, 0.0)
         inter_area = inter_section[..., 0] * inter_section[..., 1]
         union_area = boxes1_area + boxes2_area - inter_area
-        iou = 1.0 * inter_area / union_area
+        iou = 1.0 * tf.div_no_nan(inter_area, union_area)
 
         return iou
 
@@ -226,7 +230,7 @@ class Yolo_v3:
         anchors: 3 anchors in that specific category (small / med / large)
         stride: the stride for that category, (s 8; m 16; l 32)
     '''
-    def loss_layer(self, conv, pred, label, bboxes, stride):
+    def loss_layer(self, conv, pred, label, bboxes, stride, layer):
 
         # 
         conv_shape  = tf.shape(conv)
@@ -252,34 +256,50 @@ class Yolo_v3:
         # all 0 if above value is 0, smooth one-hot if above value is 1
         label_prob    = label[:, :, :, :, 5:]
 
-        giou = tf.expand_dims(self.bbox_giou(pred_xywh, label_xywh), axis=-1) 
+        giou, mid_iou, area_ar = self.bbox_giou(pred_xywh, label_xywh)
+        giou = tf.expand_dims(giou, axis=-1) 
+
         input_size = tf.cast(input_size, tf.float32)
 
         # this is a scaling method to strengthen the influence of small bbox's giou
         # basically if the bbox is small, then this scale is greater (2 - box_area/total_area)
         bbox_loss_scale = 2.0 - 1.0 * label_xywh[:, :, :, :, 2:3] * label_xywh[:, :, :, :, 3:4] / (input_size ** 2)
-        giou_loss = respond_bbox * bbox_loss_scale * (1- giou)
+        
+        obj_conf_loss = respond_bbox * bbox_loss_scale * (1- giou)**2
+        obj_class_loss = respond_bbox * tf.nn.sigmoid_cross_entropy_with_logits(labels=label_prob, logits=conv_raw_prob)
 
-        iou = self.bbox_iou(pred_xywh[:, :, :, :, np.newaxis, :], bboxes[:, np.newaxis, np.newaxis, np.newaxis, :, :])
-        max_iou = tf.expand_dims(tf.reduce_max(iou, axis=-1), axis=-1)
+        ###############################################################################################################
+        #iou = self.bbox_iou(pred_xywh[:, :, :, :, np.newaxis, :], bboxes[:, np.newaxis, np.newaxis, np.newaxis, :, :])
+        #max_iou = tf.expand_dims(tf.reduce_max(iou, axis=-1), axis=-1)
 
-        respond_bgd = (1.0 - respond_bbox) * tf.cast( max_iou < self.iou_loss_thresh, tf.float32 )
+        #respond_bgd = (1.0 - respond_bbox) * tf.cast( max_iou < self.iou_loss_thresh, tf.float32 )
+        if layer==0:
+            respond_bgd = self.mask_placeholders['noobj_sb']
+        elif layer==1:
+            respond_bgd = self.mask_placeholders['noobj_mb']
+        else:
+            respond_bgd = self.mask_placeholders['noobj_lb']
 
-        conf_focal = self.focal(respond_bbox, pred_conf)
+        respond_bgd = tf.expand_dims(respond_bgd, axis=-1)
+        #conf_focal = self.focal(respond_bbox, pred_conf)
 
+        no_obj_conf_loss = respond_bgd * tf.nn.sigmoid_cross_entropy_with_logits(labels=respond_bbox, logits=conv_raw_conf)
+        '''
         conf_loss = conf_focal * (
                 respond_bbox * tf.nn.sigmoid_cross_entropy_with_logits(labels=respond_bbox, logits=conv_raw_conf)
                 +
                 respond_bgd * tf.nn.sigmoid_cross_entropy_with_logits(labels=respond_bbox, logits=conv_raw_conf)
-        )
+        )'''
 
-        prob_loss = respond_bbox * tf.nn.sigmoid_cross_entropy_with_logits(labels=label_prob, logits=conv_raw_prob)
+        
 
-        giou_loss = tf.reduce_mean(tf.reduce_sum(giou_loss, axis=[1,2,3,4]))
-        conf_loss = tf.reduce_mean(tf.reduce_sum(conf_loss, axis=[1,2,3,4]))
-        prob_loss = tf.reduce_mean(tf.reduce_sum(prob_loss, axis=[1,2,3,4]))
+        obj_conf_loss = tf.reduce_mean(tf.reduce_sum(obj_conf_loss, axis=[1,2,3,4]))
+        
+        obj_class_loss = tf.reduce_mean(tf.reduce_sum(obj_class_loss, axis=[1,2,3,4]))
 
-        return giou_loss, conf_loss, prob_loss
+        no_obj_conf_loss = tf.reduce_mean(tf.reduce_sum(no_obj_conf_loss, axis=[1,2,3,4]))
+
+        return obj_conf_loss, no_obj_conf_loss, obj_class_loss #, mid_iou, area_ar
 
 
 
@@ -287,23 +307,27 @@ class Yolo_v3:
 
         with tf.name_scope('smaller_box_loss'):
             loss_sbbox = self.loss_layer(self.conv_sbbox, self.pred_sbbox, label_sbbox, true_sbbox,
-                                         stride=self.strides[0])
+                                         stride=self.strides[0], layer=0)
 
         with tf.name_scope('medium_box_loss'):
             loss_mbbox = self.loss_layer(self.conv_mbbox, self.pred_mbbox, label_mbbox, true_mbbox,
-                                         stride=self.strides[1])
+                                         stride=self.strides[1], layer=1)
 
         with tf.name_scope('bigger_box_loss'):
             loss_lbbox = self.loss_layer(self.conv_lbbox, self.pred_lbbox, label_lbbox, true_lbbox,
-                                         stride=self.strides[2])
+                                         stride=self.strides[2], layer=2)
 
-        with tf.name_scope('giou_loss'):
-            giou_loss = loss_sbbox[0] + loss_mbbox[0] + loss_lbbox[0]
+        with tf.name_scope('obj_conf_loss'):
+            obj_conf_loss = loss_sbbox[0] + loss_mbbox[0] + loss_lbbox[0]
 
-        with tf.name_scope('conf_loss'):
-            conf_loss = loss_sbbox[1] + loss_mbbox[1] + loss_lbbox[1]
+        with tf.name_scope('no_obj_conf_loss'):
+            no_obj_conf_loss = loss_sbbox[1] + loss_mbbox[1] + loss_lbbox[1]
 
-        with tf.name_scope('prob_loss'):
-            prob_loss = loss_sbbox[2] + loss_mbbox[2] + loss_lbbox[2]
+        with tf.name_scope('obj_class_loss'):
+            obj_class_loss = loss_sbbox[2] + loss_mbbox[2] + loss_lbbox[2]
 
-        return giou_loss, conf_loss, prob_loss
+        '''
+        iou_mid = [loss_sbbox[3], loss_mbbox[3], loss_lbbox[3]]
+        areas = [loss_sbbox[4], loss_mbbox[4], loss_lbbox[4]]
+        '''
+        return obj_conf_loss, no_obj_conf_loss, obj_class_loss #, iou_mid, areas

@@ -1,0 +1,45 @@
+
+	We have 3 'kinds' of anchor boxes in Yolo v3: small, medium, large
+
+	In each kind, there are 3 boxes.
+	When we label an image with its ground truth boxes. 
+	For each ground truth box, we evaluate its IOU with 3 kinds of anchor boxes.
+
+	Say we are evaluating the IOU between GT box and small anchors:
+
+
+	3 IOUs with 3 small anchor boxes :
+	=============
+	|  max IOU  | => we take this anchor as object (pos)
+	|   IOU     | => we ignore this one
+	--------------- -> IOU threshold
+	|   IOU     | => we take this anchor as no-object (neg)
+	=============
+
+	当我们对原始ground truth bbox做labeling时，我们计算每个anchor box与 ground truth (GT) 的IOU。 
+	注意，此时计算IOU时不考虑 GT box的中心相对于grid cell中心的位移，
+	即我们计算IOU默认 GT Box 和 anchor box 中心重合，IOU只用来参考两者形状差异。 
+
+	Question 1: 
+
+		一个Ground truth box是否允许被label 为不同种类的anchor ?
+		(as long as its IOU > thres and is the max under that kind of 3 anchors). 
+		比如，一个ground truth box可不可能既属于small anchor, 也属于medium anchor?
+
+	Question 2: 
+
+		- 像我上图画的，对于每个anchor box(以及它对应的pred box),我们会分为三类：
+		
+		1. Object(pos)，每个ground truth box只对应一个anchor box，
+		这个在labeling的时候我们就会决定这个anchor box and its pred 作为obj, 
+		训练时计算其：位置形状loss + confidence loss + classification loss
+
+		2. IGNORE: 对于anchor box and its pred, 如果其与ground truth IOU 
+		高于threshold, 但不是max, 那么我们忽略这个anchor box及其prediction
+		
+		3. Non-object(neg)，对于anchor box and its pred，
+		如果其IOU低于threshold，我们视之为no-obj。
+		训练时对no-obj 只计算：confidence loss
+
+		问题：我们何时判定一个anchor是否为no-obj？是在label的时候用anchor box 
+		和Ground Truth算IOU，还是在训练时用prediction box和ground truth算IOU?
