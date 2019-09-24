@@ -69,13 +69,17 @@ class YoloTrain(object):
         with tf.name_scope("define_loss"):
             
             self.net_var = tf.global_variables()
+            '''
             self.obj_conf_loss, self.no_obj_conf_loss, self.obj_class_loss, self.obj_loc_loss, \
                 self.mid_iou, self.areas, self.enc_areas = \
                                                 self.model.compute_loss(
                                                     self.label_sbbox,  self.label_mbbox,  self.label_lbbox,
-                                                    self.true_sbboxes, self.true_mbboxes, self.true_lbboxes)
+                                                    self.true_sbboxes, self.true_mbboxes, self.true_lbboxes)'''
+            self.obj_conf_loss, self.no_obj_conf_loss, self.obj_class_loss, self.obj_loc_loss = \
+                    self.model.compute_loss(self.label_sbbox,  self.label_mbbox,  self.label_lbbox,\
+                                            self.true_sbboxes, self.true_mbboxes, self.true_lbboxes)        
             self.loss = self.obj_conf_loss + self.no_obj_conf_loss + 0.05 * self.obj_class_loss
-            self.loss_with_loc = self.loss + tf.math.minimum(0.01 * self.obj_loc_loss, tf.constant(100., dtype=tf.float32))
+            #self.loss_with_loc = self.loss + tf.math.minimum(0.01 * self.obj_loc_loss, tf.constant(100., dtype=tf.float32))
 
         with tf.name_scope('learn_rate'):
             
@@ -121,7 +125,7 @@ class YoloTrain(object):
                 if var_name_mess[1] in ['conv_sbbox', 'conv_mbbox', 'conv_lbbox']:
                     self.first_stage_trainable_var_list.append(var)
 
-            first_stage_optimizer = tf.train.AdamOptimizer(self.learn_rate).minimize(self.loss_with_loc,
+            first_stage_optimizer = tf.train.AdamOptimizer(self.learn_rate).minimize(self.loss,
                                                       var_list=self.first_stage_trainable_var_list)
             with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
                 with tf.control_dependencies([first_stage_optimizer, global_step_update]):
@@ -150,7 +154,7 @@ class YoloTrain(object):
             tf.summary.scalar("obj_class_loss",  self.obj_class_loss)
             tf.summary.scalar("obj_location_loss", self.obj_loc_loss)
             tf.summary.scalar("total_loss", self.loss)
-            tf.summary.scalar("total_loss_with_loc", self.loss_with_loc)
+            #tf.summary.scalar("total_loss_with_loc", self.loss_with_loc)
 
             logdir = './data/log/'+self.time+'/'
             if not os.path.exists(logdir):
@@ -210,22 +214,28 @@ class YoloTrain(object):
                                 self.true_mbboxes: boxes[1],
                                 self.true_lbboxes: boxes[2],
                                 self.trainable:    True})
+                '''
                 _, summary, train_step_loss, global_step_val, \
                     obj_cf_loss, nobj_cf_loss, obj_prob_loss, obj_loc_loss,\
                     mid_iou, areas, enc_areas = self.sess.run( \
                         [train_op, self.write_op, self.loss, self.global_step, \
                          self.obj_conf_loss, self.no_obj_conf_loss, self.obj_class_loss, self.obj_loc_loss,\
-                         self.mid_iou, self.areas, self.enc_areas],feed_dict=feed_dict)
+                         self.mid_iou, self.areas, self.enc_areas],feed_dict=feed_dict)'''
+                _, summary, train_step_loss, global_step_val, \
+                    obj_cf_loss, nobj_cf_loss, obj_prob_loss, obj_loc_loss \
+                    = self.sess.run([train_op, self.write_op, self.loss, self.global_step, \
+                         self.obj_conf_loss, self.no_obj_conf_loss, self.obj_class_loss, self.obj_loc_loss],\
+                         feed_dict=feed_dict)
                 #print(type(gradient))
-                if epoch <= self.first_stage_epochs:
-                    train_step_loss += min(0.01 * obj_loc_loss, 100.)
+                #if epoch <= self.first_stage_epochs:
+                #    train_step_loss += min(0.01 * obj_loc_loss, 100.)
                 #print("Obj: {0:.2f}; No_obj: {1:.2f}; Prob: {2:.2f}; Loc: {3:.2f}"\
                 #    .format(obj_cf_loss, nobj_cf_loss, 0.05*obj_prob_loss, 0.01*obj_loc_loss))
 
                 if math.isnan(train_step_loss):
                     print("Train: Epoch {4}-Batch {5}; Obj: {0:.2f}; No_obj: {1:.2f}; Prob: {2:.2f}; Loc: {3:.2f}"\
                     .format(obj_cf_loss, nobj_cf_loss, obj_prob_loss, obj_loc_loss, epoch, batch_num))
-                    self._print_err_msg(mid_iou, areas, enc_areas)
+                    #self._print_err_msg(mid_iou, areas, enc_areas)
                     #raise ValueError('Nan value for loss')
 
                 batch_num += 1
@@ -246,18 +256,23 @@ class YoloTrain(object):
                                 self.true_mbboxes: boxes[1],
                                 self.true_lbboxes: boxes[2],
                                 self.trainable:    False})
+                '''
                 obj_cf_loss, nobj_cf_loss, obj_prob_loss, \
                     obj_loc_loss, test_step_loss, \
                     mid_iou, areas, enc_areas = self.sess.run([self.obj_conf_loss, self.no_obj_conf_loss, \
                                                 self.obj_class_loss, self.obj_loc_loss,\
                                                 self.loss, self.mid_iou, self.areas, self.enc_areas], \
-                                                feed_dict=feed_dict)
-                if epoch <= self.first_stage_epochs:
-                    test_step_loss += 0.01 * obj_loc_loss
+                                                feed_dict=feed_dict)'''
+                obj_cf_loss, nobj_cf_loss, obj_prob_loss, obj_loc_loss, test_step_loss \
+                     = self.sess.run([self.obj_conf_loss, self.no_obj_conf_loss, \
+                                      self.obj_class_loss, self.obj_loc_loss, self.loss], \
+                                      feed_dict=feed_dict)
+                #if epoch <= self.first_stage_epochs:
+                #    test_step_loss += 0.01 * obj_loc_loss
                 if math.isnan(test_step_loss):
                     print("Test: Epoch {4}-Batch {5}; Obj: {0:.2f}; No_obj: {1:.2f}; Prob: {2:.2f}; Loc: {3:.2f}"\
                     .format(obj_cf_loss, nobj_cf_loss, 0.05*obj_prob_loss, 0.01*obj_loc_loss, epoch, batch_num))
-                    self._print_err_msg(mid_iou, areas, enc_areas)
+                    #self._print_err_msg(mid_iou, areas, enc_areas)
 
                     #raise ValueError('Nan value for test loss')
                 batch_num += 1

@@ -42,7 +42,7 @@ class Dataset(object):
         self.annotations = self.load_annotations(dataset_type)
         self.num_samples = len(self.annotations)
         #self.num_batchs = int(np.ceil(self.num_samples / self.batch_size))
-        self.num_batchs = 500
+        self.num_batchs = 200
         self.batch_count = 0
 
 

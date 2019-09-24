@@ -61,7 +61,7 @@ def main(type, iou_threshold, confidence_threshold, checkpoint_fn):
                     model_size=_MODEL_SIZE)
         
     obj_conf_loss, no_obj_conf_loss, obj_class_loss, \
-        obj_loc_loss, _, _, _ = \
+        obj_loc_loss = \
         model.compute_loss(label_sbbox, label_mbbox, label_lbbox,\
                            true_sbboxes, true_mbboxes, true_lbboxes)
     

@@ -265,9 +265,10 @@ class Yolo_v3:
         # basically if the bbox is small, then this scale is greater (2 - box_area/total_area)
         bbox_loss_scale = 2.0 - 1.0 * label_xywh[:, :, :, :, 2:3] * label_xywh[:, :, :, :, 3:4] / (input_size ** 2)
 
-        obj_loc_loss = respond_bbox * bbox_loss_scale * (label_xywh - pred_xywh)**2
-        
-        obj_conf_loss = respond_bbox * bbox_loss_scale * (1- giou)**2
+        obj_loc_loss = respond_bbox * (label_xywh - pred_xywh)**2
+        #obj_loc_loss = respond_bbox * bbox_loss_scale * (label_xywh - pred_xywh)**2
+        obj_conf_loss = respond_bbox * (1- giou)**2
+        #obj_conf_loss = respond_bbox * bbox_loss_scale * (1- giou)**2
         obj_class_loss = respond_bbox * tf.nn.sigmoid_cross_entropy_with_logits(labels=label_prob, logits=conv_raw_prob)
 
         ###############################################################################################################
@@ -303,7 +304,7 @@ class Yolo_v3:
 
         obj_loc_loss = tf.reduce_mean(tf.reduce_sum(obj_loc_loss, axis=[-1]))
 
-        return obj_conf_loss, no_obj_conf_loss, obj_class_loss, obj_loc_loss, mid_iou, area_ar, enclose_area
+        return obj_conf_loss, no_obj_conf_loss, obj_class_loss, obj_loc_loss #, mid_iou, area_ar, enclose_area
 
 
 
@@ -331,8 +332,8 @@ class Yolo_v3:
             obj_class_loss = loss_sbbox[2] + loss_mbbox[2] + loss_lbbox[2]
 
         obj_loc_loss = loss_sbbox[3] + loss_mbbox[3] + loss_lbbox[3]
-        iou_mid = [loss_sbbox[4], loss_mbbox[4], loss_lbbox[4]]
-        areas = [loss_sbbox[5], loss_mbbox[5], loss_lbbox[5]]
-        enc_areas = [loss_sbbox[6], loss_mbbox[6], loss_lbbox[6]]
+        #iou_mid = [loss_sbbox[4], loss_mbbox[4], loss_lbbox[4]]
+        #areas = [loss_sbbox[5], loss_mbbox[5], loss_lbbox[5]]
+        #enc_areas = [loss_sbbox[6], loss_mbbox[6], loss_lbbox[6]]
 
-        return obj_conf_loss, no_obj_conf_loss, obj_class_loss, obj_loc_loss, iou_mid, areas, enc_areas
+        return obj_conf_loss, no_obj_conf_loss, obj_class_loss, obj_loc_loss #, iou_mid, areas, enc_areas
