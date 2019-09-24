@@ -138,10 +138,10 @@ class Yolo_v3:
             return conv_lbbox, conv_mbbox, conv_sbbox,\
                 pred_lbbox, pred_mbbox, pred_sbbox
 
-    '''
-    def eval(self):
-        pred_bbox_shape = self.pred_lbbox.get_shape().as_list()
-        batch_size = pred_bbox_shape[0]
+    
+    def eval(self, batch_size, max_output_size, iou_threshold, confidence_threshold):
+        #pred_bbox_shape = self.pred_lbbox.get_shape().as_list()
+        #batch_size = pred_bbox_shape[0]
 
         pred_lbbox = tf.reshape(self.pred_lbbox, [batch_size, -1, 5+self.n_classes])
         pred_mbbox = tf.reshape(self.pred_mbbox, [batch_size, -1, 5+self.n_classes])
@@ -153,12 +153,12 @@ class Yolo_v3:
 
         boxes_dicts = non_max_suppression(
             inputs, n_classes=self.n_classes,
-            max_output_size=self.max_output_size,
-            iou_threshold=self.iou_threshold,
-            confidence_threshold=self.confidence_threshold)
+            max_output_size=max_output_size,
+            iou_threshold=iou_threshold,
+            confidence_threshold=confidence_threshold)
 
         self.boxes_dicts = boxes_dicts
-    '''
+    
 
 
     def focal(self, target, actual, alpha=1, gamma=2):
@@ -197,7 +197,7 @@ class Yolo_v3:
         enclose_area = enclose[..., 0] * enclose[..., 1]
         giou = iou - 1.0 * tf.div_no_nan((enclose_area - union_area), enclose_area)
 
-        return giou, iou, area_ar
+        return giou, iou, area_ar, enclose_area
 
     def bbox_iou(self, boxes1, boxes2):
 
@@ -256,7 +256,7 @@ class Yolo_v3:
         # all 0 if above value is 0, smooth one-hot if above value is 1
         label_prob    = label[:, :, :, :, 5:]
 
-        giou, mid_iou, area_ar = self.bbox_giou(pred_xywh, label_xywh)
+        giou, mid_iou, area_ar, enclose_area = self.bbox_giou(pred_xywh, label_xywh)
         giou = tf.expand_dims(giou, axis=-1) 
 
         input_size = tf.cast(input_size, tf.float32)
@@ -264,6 +264,8 @@ class Yolo_v3:
         # this is a scaling method to strengthen the influence of small bbox's giou
         # basically if the bbox is small, then this scale is greater (2 - box_area/total_area)
         bbox_loss_scale = 2.0 - 1.0 * label_xywh[:, :, :, :, 2:3] * label_xywh[:, :, :, :, 3:4] / (input_size ** 2)
+
+        obj_loc_loss = respond_bbox * bbox_loss_scale * (label_xywh - pred_xywh)**2
         
         obj_conf_loss = respond_bbox * bbox_loss_scale * (1- giou)**2
         obj_class_loss = respond_bbox * tf.nn.sigmoid_cross_entropy_with_logits(labels=label_prob, logits=conv_raw_prob)
@@ -299,7 +301,9 @@ class Yolo_v3:
 
         no_obj_conf_loss = tf.reduce_mean(tf.reduce_sum(no_obj_conf_loss, axis=[1,2,3,4]))
 
-        return obj_conf_loss, no_obj_conf_loss, obj_class_loss #, mid_iou, area_ar
+        obj_loc_loss = tf.reduce_mean(tf.reduce_sum(obj_loc_loss, axis=[-1]))
+
+        return obj_conf_loss, no_obj_conf_loss, obj_class_loss, obj_loc_loss, mid_iou, area_ar, enclose_area
 
 
 
@@ -326,8 +330,9 @@ class Yolo_v3:
         with tf.name_scope('obj_class_loss'):
             obj_class_loss = loss_sbbox[2] + loss_mbbox[2] + loss_lbbox[2]
 
-        '''
-        iou_mid = [loss_sbbox[3], loss_mbbox[3], loss_lbbox[3]]
-        areas = [loss_sbbox[4], loss_mbbox[4], loss_lbbox[4]]
-        '''
-        return obj_conf_loss, no_obj_conf_loss, obj_class_loss #, iou_mid, areas
+        obj_loc_loss = loss_sbbox[3] + loss_mbbox[3] + loss_lbbox[3]
+        iou_mid = [loss_sbbox[4], loss_mbbox[4], loss_lbbox[4]]
+        areas = [loss_sbbox[5], loss_mbbox[5], loss_lbbox[5]]
+        enc_areas = [loss_sbbox[6], loss_mbbox[6], loss_lbbox[6]]
+
+        return obj_conf_loss, no_obj_conf_loss, obj_class_loss, obj_loc_loss, iou_mid, areas, enc_areas

@@ -88,7 +88,7 @@ def yolo_detection(inputs, n_classes, anchors, img_size,
     box_centers = (box_centers + x_y_offset) * strides
 
     anchors = tf.tile(anchors, [grid_shape[0] * grid_shape[1], 1])
-    box_shapes = tf.exp(box_shapes) * tf.to_float(anchors)
+    box_shapes = tf.exp(box_shapes) * tf.cast(anchors, tf.float32)
 
     confidence = tf.nn.sigmoid(confidence)
 

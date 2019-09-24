@@ -22,7 +22,15 @@ def _padding(inputs, kernel_size, data_format):
         return tf.pad(inputs, [[0,0], [pad_beg, pad_end], 
             [pad_beg, pad_end], [0,0]])
 
+def batch_norm(inputs, trainable, data_format):
+    if data_format=='channels_first':
+        ax = 1
+    else:
+        ax = 3
+    return tf.layers.batch_normalization(inputs, axis=ax, momentum=_BATCH_NORM_DECAY, 
+        epsilon=_BATCH_NORM_EPSILON, scale=True, trainable=True, training=trainable)
 
+'''
 def batch_norm(inputs, trainable, data_format):
     if data_format=='channels_first':
         ax = 1
@@ -30,7 +38,7 @@ def batch_norm(inputs, trainable, data_format):
         ax = 3
     return BatchNormalization(axis=ax, momentum=_BATCH_NORM_DECAY, 
         epsilon=_BATCH_NORM_EPSILON, scale=True)(inputs=inputs, training=trainable)
-
+'''
 
 def convolutional(inputs, filters, kernel_size, trainable, name, strides=1, 
         data_format='channels_first', act=True, bn=True):
@@ -48,6 +56,11 @@ def convolutional(inputs, filters, kernel_size, trainable, name, strides=1,
 
         if bn:
             conv = batch_norm(conv, trainable, data_format)
+        else:
+            bias = tf.get_variable(name='bias', shape=filters, trainable=True,
+                                   dtype=tf.float32, initializer=tf.constant_initializer(0.0))
+            conv = tf.nn.bias_add(conv, bias)
+
 
         if act:
             conv = tf.nn.leaky_relu(conv, alpha=_LEAKY_RELU)

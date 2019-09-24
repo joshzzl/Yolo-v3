@@ -16,10 +16,23 @@
 """Contains utility functions for Yolo v3 model."""
 
 import numpy as np
+import os
+import tensorflow as tf
 from PIL import Image, ImageDraw, ImageFont
 from seaborn import color_palette
 import cv2
 
+def build_mask_placeholders(output_sizes):
+    with tf.name_scope('define_masks'):
+        mask_holders = {}
+
+        mask_holders['noobj_sb'] = tf.placeholder(dtype=tf.float32, shape=[None, output_sizes[0],
+                                                output_sizes[0], 3], name='noobj_mask_sb')
+        mask_holders['noobj_mb'] = tf.placeholder(dtype=tf.float32, shape=[None, output_sizes[1],
+                                                output_sizes[1], 3], name='noobj_mask_mb')
+        mask_holders['noobj_lb'] = tf.placeholder(dtype=tf.float32, shape=[None, output_sizes[2],
+                                                output_sizes[2], 3], name='noobj_mask_lb')
+        return mask_holders
 
 def construct_feed_dict(placeholders, nobj_s, nobj_m, nobj_l):
     """Construct feed dictionary."""
@@ -53,6 +66,65 @@ def load_images(img_names, model_size):
     return imgs
 
 
+def build_boxes(inputs):
+    """Computes top left and bottom right points of the boxes."""
+    center_x, center_y, width, height, confidence, classes = \
+        np.split(inputs, [1, 2, 3, 4, 5], axis=-1)
+
+    top_left_x = center_x - width / 2
+    top_left_y = center_y - height / 2
+    bottom_right_x = center_x + width / 2
+    bottom_right_y = center_y + height / 2
+
+    boxes = np.concatenate([top_left_x, top_left_y,
+                       bottom_right_x, bottom_right_y,
+                       confidence, classes], axis=-1)
+
+    return boxes
+
+def non_max_suppression(inputs, n_classes, max_output_size, iou_threshold,
+                        confidence_threshold):
+    """Performs non-max suppression separately for each class.
+
+    Args:
+        inputs: Tensor input.
+        n_classes: Number of classes.
+        max_output_size: Max number of boxes to be selected for each class.
+        iou_threshold: Threshold for the IOU.
+        confidence_threshold: Threshold for the confidence score.
+    Returns:
+        A list containing class-to-boxes dictionaries
+            for each sample in the batch.
+    """
+    batch = tf.unstack(inputs)
+    boxes_dicts = []
+    for boxes in batch:
+        boxes = tf.boolean_mask(boxes, boxes[:, 4] > confidence_threshold)
+        classes = tf.argmax(boxes[:, 5:], axis=-1)
+        classes = tf.expand_dims(tf.to_float(classes), axis=-1)
+        boxes = tf.concat([boxes[:, :5], classes], axis=-1)
+
+        boxes_dict = dict()
+        for cls in range(n_classes):
+            mask = tf.equal(boxes[:, 5], cls)
+            mask_shape = mask.get_shape()
+            if mask_shape.ndims != 0:
+                class_boxes = tf.boolean_mask(boxes, mask)
+                boxes_coords, boxes_conf_scores, _ = tf.split(class_boxes,
+                                                              [4, 1, -1],
+                                                              axis=-1)
+                boxes_conf_scores = tf.reshape(boxes_conf_scores, [-1])
+                indices = tf.image.non_max_suppression(boxes_coords,
+                                                       boxes_conf_scores,
+                                                       max_output_size,
+                                                       iou_threshold)
+                class_boxes = tf.gather(class_boxes, indices)
+                boxes_dict[cls] = class_boxes[:, :5]
+
+        boxes_dicts.append(boxes_dict)
+
+    return boxes_dicts
+
 def load_class_names(file_name):
     """Returns a list of class names read from `file_name`."""
     with open(file_name, 'r') as f:
@@ -73,6 +145,7 @@ def draw_boxes(img_names, boxes_dicts, class_names, model_size):
     colors = ((np.array(color_palette("hls", 80)) * 255)).astype(np.uint8)
     for num, img_name, boxes_dict in zip(range(len(img_names)), img_names,
                                          boxes_dicts):
+        filename = os.path.basename(img_name)
         img = Image.open(img_name)
         draw = ImageDraw.Draw(img)
         font = ImageFont.truetype(font='./data/fonts/futur.ttf',
@@ -105,7 +178,7 @@ def draw_boxes(img_names, boxes_dicts, class_names, model_size):
 
         rgb_img = img.convert('RGB')
 
-        rgb_img.save('./detections/detection_' + str(num + 1) + '.jpg')
+        rgb_img.save('./detections/detection_' + filename)
 
 
 def draw_frame(frame, frame_size, boxes_dicts, class_names, model_size):

@@ -9,8 +9,8 @@ import wget
 _ANNO_PATH = './coco/annotations/'
 _ANNO_FILE = 'instances_train2014.json'
 
-_TRAIN_CAT_SELECT = 60
-_TEST_CAT_SELECT = 20
+_TRAIN_CAT_SELECT = 6
+_TEST_CAT_SELECT = 2
 
 _WRITE_FOLDER = './data/dataset/'
 

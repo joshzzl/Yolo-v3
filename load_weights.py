@@ -28,6 +28,7 @@ def load_weights(variables, file_name):
         # Each convolution layer has batch normalization.
         for i in range(52):
             conv_var = variables[5 * i]
+            #print(conv_var.shape)
             gamma, beta, mean, variance = variables[5 * i + 1:5 * i + 5]
             batch_norm_vars = [beta, gamma, mean, variance]
 
@@ -39,6 +40,7 @@ def load_weights(variables, file_name):
                 assign_ops.append(tf.assign(var, var_weights))
 
             shape = conv_var.shape.as_list()
+
             num_params = np.prod(shape)
             var_weights = weights[ptr:ptr + num_params].reshape(
                 (shape[3], shape[2], shape[0], shape[1]))
@@ -66,12 +68,15 @@ def load_weights(variables, file_name):
                     assign_ops.append(tf.assign(var, var_weights))
 
                 shape = conv_var.shape.as_list()
+                print(i, shape)
+                '''
                 num_params = np.prod(shape)
                 var_weights = weights[ptr:ptr + num_params].reshape(
                     (shape[3], shape[2], shape[0], shape[1]))
                 var_weights = np.transpose(var_weights, (2, 3, 1, 0))
                 ptr += num_params
                 assign_ops.append(tf.assign(conv_var, var_weights))
+                '''
 
             bias = variables[52 * 5 + unnormalized[j] * 5 + j * 2 + 1]
             shape = bias.shape.as_list()
@@ -94,10 +99,11 @@ def load_weights(variables, file_name):
 
 def main():
     inputs = tf.placeholder(tf.float32, [1, 416, 416, 3])
-    model = Yolo_v3(inputs, n_classes=80, model_size=(416, 416),
-                    max_output_size=5,
-                    iou_threshold=0.5,
-                    confidence_threshold=0.5, trainable=False)
+    model = Yolo_v3(inputs=inputs, 
+                    mask_placeholders=None,
+                    trainable=False, 
+                    n_classes=80, 
+                    model_size=(416,416))
 
 
     model_vars = tf.global_variables(scope='yolo_v3_model')

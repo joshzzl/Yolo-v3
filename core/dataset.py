@@ -41,7 +41,8 @@ class Dataset(object):
 
         self.annotations = self.load_annotations(dataset_type)
         self.num_samples = len(self.annotations)
-        self.num_batchs = int(np.ceil(self.num_samples / self.batch_size))
+        #self.num_batchs = int(np.ceil(self.num_samples / self.batch_size))
+        self.num_batchs = 500
         self.batch_count = 0
 
 
@@ -66,6 +67,7 @@ class Dataset(object):
             self.train_output_sizes = self.train_input_size // self.strides
 
             batch_image = np.zeros((self.batch_size, self.train_input_size, self.train_input_size, 3))
+            batch_paths = []
 
             batch_label_sbbox = np.zeros((self.batch_size, self.train_output_sizes[0], self.train_output_sizes[0],
                                           self.anchor_per_scale, 5 + self.num_classes))
@@ -91,7 +93,8 @@ class Dataset(object):
                     index = self.batch_count * self.batch_size + num
                     if index >= self.num_samples: index -= self.num_samples
                     annotation = self.annotations[index]
-                    image, bboxes = self.parse_annotation(annotation)
+                    image, bboxes, img_path = self.parse_annotation(annotation)
+                    batch_paths.append(img_path)
                     label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes, no_obj_mask = self.preprocess_true_boxes(bboxes)
 
                     batch_image[num, :, :, :] = image
@@ -110,7 +113,8 @@ class Dataset(object):
                 self.batch_count += 1
                 return batch_image, [batch_label_sbbox, batch_label_mbbox, batch_label_lbbox], \
                        [batch_sbboxes, batch_mbboxes, batch_lbboxes], \
-                       [batch_noobj_mask_sb, batch_noobj_mask_mb, batch_noobj_mask_lb]
+                       [batch_noobj_mask_sb, batch_noobj_mask_mb, batch_noobj_mask_lb], \
+                       batch_paths
             else:
                 self.batch_count = 0
                 np.random.shuffle(self.annotations)
@@ -189,7 +193,7 @@ class Dataset(object):
             image, bboxes = self.random_translate(np.copy(image), np.copy(bboxes))
 
         image, bboxes = utils.image_preporcess(np.copy(image), [self.train_input_size, self.train_input_size], np.copy(bboxes))
-        return image, bboxes
+        return image, bboxes, image_path
 
     def bbox_iou(self, boxes1, boxes2):
 
