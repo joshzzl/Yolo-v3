@@ -50,7 +50,7 @@ class YoloTrain(object):
         with tf.name_scope('define_input'):
             self.input_data   = tf.placeholder(dtype=tf.float32, shape=[None, self.img_size, self.img_size, 3],name='input_data')
             
-            self.mask_placeholders = self._build_mask_placeholders(self.output_sizes)
+            #self.mask_placeholders = self._build_mask_placeholders(self.output_sizes)
 
             self.label_sbbox  = tf.placeholder(dtype=tf.float32, name='label_sbbox')
             self.label_mbbox  = tf.placeholder(dtype=tf.float32, name='label_mbbox')
@@ -61,7 +61,7 @@ class YoloTrain(object):
             self.trainable     = tf.placeholder(dtype=tf.bool, name='training')
 
         self.model = Yolo_v3(inputs=self.input_data, 
-                                mask_placeholders=self.mask_placeholders,
+                                #mask_placeholders=self.mask_placeholders,
                                 trainable=self.trainable, 
                                 n_classes=self.num_classes, 
                                 model_size=(self.trainset.train_input_size, self.trainset.train_input_size))
@@ -78,8 +78,7 @@ class YoloTrain(object):
             self.obj_conf_loss, self.no_obj_conf_loss, self.obj_class_loss, self.obj_loc_loss = \
                     self.model.compute_loss(self.label_sbbox,  self.label_mbbox,  self.label_lbbox,\
                                             self.true_sbboxes, self.true_mbboxes, self.true_lbboxes)        
-            self.loss = self.obj_conf_loss + self.no_obj_conf_loss + 0.05 * self.obj_class_loss
-            #self.loss_with_loc = self.loss + tf.math.minimum(0.01 * self.obj_loc_loss, tf.constant(100., dtype=tf.float32))
+            self.loss = self.obj_conf_loss + self.no_obj_conf_loss + self.obj_class_loss + self.obj_loc_loss
 
         with tf.name_scope('learn_rate'):
             
@@ -204,8 +203,10 @@ class YoloTrain(object):
             batch_num = 0
 
             for train_data in pbar:
-                batch_img, label_boxes, boxes, noobj_masks, _ = train_data
-                feed_dict = utils.construct_feed_dict(self.mask_placeholders, *noobj_masks)
+                batch_img, label_boxes, boxes, _ = train_data
+                #batch_img, label_boxes, boxes, noobj_masks, _ = train_data
+                #feed_dict = utils.construct_feed_dict(self.mask_placeholders, *noobj_masks)
+                feed_dict = {}
                 feed_dict.update({self.input_data:   batch_img,
                                 self.label_sbbox:  label_boxes[0],
                                 self.label_mbbox:  label_boxes[1],
@@ -242,12 +243,14 @@ class YoloTrain(object):
                 train_epoch_loss.append(train_step_loss)
                 self.summary_writer.add_summary(summary, global_step_val)
                 pbar.set_description("Loss: {4:.2f}; Obj: {0:.2f}; No_obj: {1:.2f}; Prob: {2:.2f}; Loc: {3:.2f}"\
-                    .format(obj_cf_loss, nobj_cf_loss, 0.05*obj_prob_loss, 0.01*obj_loc_loss, train_step_loss))
+                    .format(obj_cf_loss, nobj_cf_loss, obj_prob_loss, obj_loc_loss, train_step_loss))
 
             batch_num = 0
             for test_data in self.testset:
-                batch_img, label_boxes, boxes, noobj_masks, _ = test_data
-                feed_dict = utils.construct_feed_dict(self.mask_placeholders, *noobj_masks)
+                batch_img, label_boxes, boxes, _ = test_data
+                #batch_img, label_boxes, boxes, noobj_masks, _ = test_data
+                #feed_dict = utils.construct_feed_dict(self.mask_placeholders, *noobj_masks)
+                feed_dict = {}
                 feed_dict.update({self.input_data:   batch_img,
                                 self.label_sbbox:  label_boxes[0],
                                 self.label_mbbox:  label_boxes[1],
@@ -271,7 +274,7 @@ class YoloTrain(object):
                 #    test_step_loss += 0.01 * obj_loc_loss
                 if math.isnan(test_step_loss):
                     print("Test: Epoch {4}-Batch {5}; Obj: {0:.2f}; No_obj: {1:.2f}; Prob: {2:.2f}; Loc: {3:.2f}"\
-                    .format(obj_cf_loss, nobj_cf_loss, 0.05*obj_prob_loss, 0.01*obj_loc_loss, epoch, batch_num))
+                    .format(obj_cf_loss, nobj_cf_loss, obj_prob_loss, obj_loc_loss, epoch, batch_num))
                     #self._print_err_msg(mid_iou, areas, enc_areas)
 
                     #raise ValueError('Nan value for test loss')

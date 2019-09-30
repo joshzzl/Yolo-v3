@@ -32,7 +32,7 @@ _STRIDES = np.array(cfg.YOLO.STRIDES)
 _OUTPUT_SIZE = 416 // _STRIDES
 _CHECKPOINT_FN_200 = './checkpoint/rn-rn-yolov3_B200.ckpt'
 _CHECKPOINT_FN_500 = './checkpoint/rn-rn-yolov3_B500.ckpt'
-_MODEL_CKPT = './checkpoint/model.ckpt'
+_MODEL_CKPT = './checkpoint/yolov3_coco_demo.ckpt'
 
 def main(type, iou_threshold, confidence_threshold, checkpoint_fn):
     if type != 'images':
@@ -86,7 +86,7 @@ def main(type, iou_threshold, confidence_threshold, checkpoint_fn):
         for batch in batches:
             if i >= 10:
                 break
-            print(i)
+            print()
             
             saver = tf.train.Saver(tf.global_variables(scope='yolo_v3_model'))
             saver.restore(sess, checkpoint_fn)
@@ -101,16 +101,35 @@ def main(type, iou_threshold, confidence_threshold, checkpoint_fn):
                               true_sbboxes: boxes[0],
                               true_mbboxes: boxes[1],
                               true_lbboxes: boxes[2]})
+            boxes_dicts, detect_loss = sess.run([model.boxes_dicts, loss], feed_dict=feed_dict)
+            
+            print("Batch: {0}; Loss: {1:.2f}".format(i, detect_loss))
+            utils.draw_boxes(img_paths, boxes_dicts, class_names, _MODEL_SIZE, mode='t')
 
+            saver = tf.train.Saver(tf.global_variables(scope='yolo_v3_model'))
+            saver.restore(sess, _MODEL_CKPT)
+            
+            model.eval(batch_size, _MAX_OUTPUT_SIZE, iou_threshold, confidence_threshold)
+            batch_img, label_boxes, boxes, noobj_masks, img_paths = batch
+            feed_dict = utils.construct_feed_dict(mask_placeholders, *noobj_masks)
+            feed_dict.update({inputs:   batch_img,
+                              label_sbbox:  label_boxes[0],
+                              label_mbbox:  label_boxes[1],
+                              label_lbbox:  label_boxes[2],
+                              true_sbboxes: boxes[0],
+                              true_mbboxes: boxes[1],
+                              true_lbboxes: boxes[2]})
+            baseline_boxes_dicts, baseline_detect_loss = sess.run([model.boxes_dicts, loss], feed_dict=feed_dict)
+            
+            print("Batch: {0}; Baseline Loss: {1:.2f}".format(i, baseline_detect_loss))
+            utils.draw_boxes(img_paths, baseline_boxes_dicts, class_names, _MODEL_SIZE, mode='b')
             '''
             pred_lbbox, pred_mbbox, pred_sbbox, loss, \
                 obj_conf, no_obj_conf, obj_prob = \
                 sess.run([model.pred_lbbox, model.pred_mbbox, model.pred_lbbox,\
                           loss, obj_conf_loss, no_obj_conf_loss, obj_class_loss], \
                           feed_dict=feed_dict)'''
-            boxes_dicts, detect_loss = sess.run([model.boxes_dicts, loss], feed_dict=feed_dict)
             
-            print("Loss: {0:.2f}".format(detect_loss))
 
             '''
             pred_lbbox = np.reshape(pred_lbbox, [batch_size, -1, 5+n_classes])
@@ -123,7 +142,7 @@ def main(type, iou_threshold, confidence_threshold, checkpoint_fn):
                 max_output_size=_MAX_OUTPUT_SIZE, iou_threshold=iou_threshold,\
                 confidence_threshold=confidence_threshold)
             boxes_dicts = sess.run(boxes_dicts)'''
-            utils.draw_boxes(img_paths, boxes_dicts, class_names, _MODEL_SIZE)
+            
             i += 1
 
     print('Detections have been saved successfully.')

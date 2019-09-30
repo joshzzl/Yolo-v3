@@ -20,14 +20,14 @@ import core.utils as utils
 from core.config import cfg
 
 
-
 class Dataset(object):
     """implement Dataset here"""
     def __init__(self, dataset_type):
         self.annot_path  = cfg.TRAIN.ANNOT_PATH if dataset_type == 'train' else cfg.TEST.ANNOT_PATH
         self.input_sizes = cfg.TRAIN.INPUT_SIZE if dataset_type == 'train' else cfg.TEST.INPUT_SIZE
         self.batch_size  = cfg.TRAIN.BATCH_SIZE if dataset_type == 'train' else cfg.TEST.BATCH_SIZE
-        self.data_aug    = cfg.TRAIN.DATA_AUG   if dataset_type == 'train' else cfg.TEST.DATA_AUG
+        #self.data_aug    = cfg.TRAIN.DATA_AUG   if dataset_type == 'train' else cfg.TEST.DATA_AUG
+        self.data_aug    = False  if dataset_type == 'train' else cfg.TEST.DATA_AUG
 
         self.train_input_sizes = cfg.TRAIN.INPUT_SIZE
         # hardcode here
@@ -76,16 +76,19 @@ class Dataset(object):
             batch_label_lbbox = np.zeros((self.batch_size, self.train_output_sizes[2], self.train_output_sizes[2],
                                           self.anchor_per_scale, 5 + self.num_classes))
 
+            # !!! I need to remember this that the boxes contains a lot of 0s
             batch_sbboxes = np.zeros((self.batch_size, self.max_bbox_per_scale, 4))
             batch_mbboxes = np.zeros((self.batch_size, self.max_bbox_per_scale, 4))
             batch_lbboxes = np.zeros((self.batch_size, self.max_bbox_per_scale, 4))
 
+            '''
             batch_noobj_mask_sb = np.zeros((self.batch_size, self.train_output_sizes[0], self.train_output_sizes[0],
                                           self.anchor_per_scale))
             batch_noobj_mask_mb = np.zeros((self.batch_size, self.train_output_sizes[1], self.train_output_sizes[1],
                                           self.anchor_per_scale))
             batch_noobj_mask_lb = np.zeros((self.batch_size, self.train_output_sizes[2], self.train_output_sizes[2],
                                           self.anchor_per_scale))
+            '''
 
             num = 0
             if self.batch_count < self.num_batchs:
@@ -95,7 +98,8 @@ class Dataset(object):
                     annotation = self.annotations[index]
                     image, bboxes, img_path = self.parse_annotation(annotation)
                     batch_paths.append(img_path)
-                    label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes, no_obj_mask = self.preprocess_true_boxes(bboxes)
+                    #label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes, no_obj_mask = self.preprocess_true_boxes(bboxes)
+                    label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes = self.preprocess_true_boxes(bboxes)
 
                     batch_image[num, :, :, :] = image
                     batch_label_sbbox[num, :, :, :, :] = label_sbbox
@@ -105,16 +109,16 @@ class Dataset(object):
                     batch_mbboxes[num, :, :] = mbboxes
                     batch_lbboxes[num, :, :] = lbboxes
 
-                    batch_noobj_mask_sb[num, :, :, :] = no_obj_mask[0]
-                    batch_noobj_mask_mb[num, :, :, :] = no_obj_mask[1]
-                    batch_noobj_mask_lb[num, :, :, :] = no_obj_mask[2]
+                    #batch_noobj_mask_sb[num, :, :, :] = no_obj_mask[0]
+                    #batch_noobj_mask_mb[num, :, :, :] = no_obj_mask[1]
+                    #batch_noobj_mask_lb[num, :, :, :] = no_obj_mask[2]
 
                     num += 1
                 self.batch_count += 1
                 return batch_image, [batch_label_sbbox, batch_label_mbbox, batch_label_lbbox], \
-                       [batch_sbboxes, batch_mbboxes, batch_lbboxes], \
-                       [batch_noobj_mask_sb, batch_noobj_mask_mb, batch_noobj_mask_lb], \
-                       batch_paths
+                       [batch_sbboxes, batch_mbboxes, batch_lbboxes], batch_paths
+                       #[batch_noobj_mask_sb, batch_noobj_mask_mb, batch_noobj_mask_lb], \
+
             else:
                 self.batch_count = 0
                 np.random.shuffle(self.annotations)
@@ -218,6 +222,7 @@ class Dataset(object):
         return inter_area / union_area
 
     # IOU threshold used in this method is 0.3
+    # for one image only
     def preprocess_true_boxes(self, bboxes):
 
         # label here loop over small-box labels, med-box labels, large-box labels
@@ -225,8 +230,8 @@ class Dataset(object):
         label = [np.zeros((self.train_output_sizes[i], self.train_output_sizes[i], self.anchor_per_scale,
                            5 + self.num_classes)) for i in range(3)]
 
-        no_obj_mask = [np.zeros((self.train_output_sizes[i], self.train_output_sizes[i], self.anchor_per_scale))
-                    for i in range(3)]
+        #no_obj_mask = [np.zeros((self.train_output_sizes[i], self.train_output_sizes[i], self.anchor_per_scale))
+        #            for i in range(3)]
 
         # each ele here is (150, 4)
         bboxes_xywh = [np.zeros((self.max_bbox_per_scale, 4)) for _ in range(3)]
@@ -251,7 +256,7 @@ class Dataset(object):
             bbox_xywh_scaled = 1.0 * bbox_xywh[np.newaxis, :] / self.strides[:, np.newaxis]
 
             iou = []
-            exist_positive = False
+            #exist_positive = False
             
             # the i here loops over small-box, mid-box, big-box
             for i in range(3):
@@ -264,9 +269,9 @@ class Dataset(object):
                 iou_scale = self.bbox_iou(bbox_xywh_scaled[i][np.newaxis, :], anchors_xywh)
                 iou.append(iou_scale)
                 #iou_mask = iou_scale > 0.3
-                iou_mask = iou_scale > 0.5
+                #iou_mask = iou_scale > 0.5
 
-                
+                '''
                 if np.any(iou_mask):
                     xind, yind = np.floor(bbox_xywh_scaled[i, 0:2]).astype(np.int32)
 
@@ -287,7 +292,35 @@ class Dataset(object):
                     bbox_count[i] += 1
 
                     exist_positive = True
+                '''
+            # find the best possible anchor to fit
+            best_anchor_ind = np.argmax(np.array(iou).reshape(-1), axis=-1)
+            # small/med/large
+            best_detect = int(best_anchor_ind / self.anchor_per_scale)
+            # 0,1,2
+            best_anchor = int(best_anchor_ind % self.anchor_per_scale)
+            xind, yind = np.floor(bbox_xywh_scaled[best_detect, 0:2]).astype(np.int32)
 
+            label[best_detect][yind, xind, best_anchor, :] = 0
+            label[best_detect][yind, xind, best_anchor, 0:4] = bbox_xywh
+            label[best_detect][yind, xind, best_anchor, 4:5] = 1.0
+            label[best_detect][yind, xind, best_anchor, 5:] = smooth_onehot
+
+            bbox_ind = int(bbox_count[best_detect] % self.max_bbox_per_scale)
+            bboxes_xywh[best_detect][bbox_ind, :4] = bbox_xywh
+            bbox_count[best_detect] += 1 
+
+            '''
+            for i in range(len(iou)):
+                xind, yind = np.floor(bbox_xywh_scaled[i, 0:2]).astype(np.int32)
+                # hardcode the threshold as 0.3
+                iou_less_mask = iou[i] < 0.3
+                no_obj_mask[i][yind, xind, iou_less_mask] = 1.0
+
+            no_obj_mask[best_detect][yind, xind, best_anchor] = 0.
+            '''
+
+            '''
             if not exist_positive:
                 # find the best possible anchor to fit
                 best_anchor_ind = np.argmax(np.array(iou).reshape(-1), axis=-1)
@@ -320,16 +353,13 @@ class Dataset(object):
                     # hardcode the threshold as 0.3
                     iou_less_mask = iou[i] < 0.3
                     no_obj_mask[i][yind, xind, iou_less_mask] = 1.0
-
+            '''
+        #print(bbox_count)
         # each item here is (size, size, 3, 85) and there are 3 ele
         label_sbbox, label_mbbox, label_lbbox = label
         # each item here is (150, 4), 4-> (x,y,w,h)
         sbboxes, mbboxes, lbboxes = bboxes_xywh
-        return label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes, no_obj_mask
+        return label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes #, no_obj_mask
 
     def __len__(self):
         return self.num_batchs
-
-
-
-

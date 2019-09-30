@@ -82,6 +82,10 @@ def yolo_detection(inputs, n_classes, anchors, img_size,
     x_offset = tf.reshape(x_offset, (-1, 1))
     y_offset = tf.reshape(y_offset, (-1, 1))
     x_y_offset = tf.concat([x_offset, y_offset], axis=-1)
+    
+    xy_offset_output = tf.identity(x_y_offset)
+    xy_offset_output = tf.reshape(xy_offset_output, [grid_size[0], grid_size[1], 1, 2])
+
     x_y_offset = tf.tile(x_y_offset, [1, n_anchors])
     x_y_offset = tf.reshape(x_y_offset, [1, -1, 2])
     box_centers = tf.nn.sigmoid(box_centers)
@@ -100,7 +104,7 @@ def yolo_detection(inputs, n_classes, anchors, img_size,
     inputs = tf.reshape(inputs, [-1, grid_shape[0], grid_shape[1], 
                                  n_anchors, 5+n_classes])
 
-    return raw_output, inputs
+    return raw_output, inputs, xy_offset_output
 
 
 def upsample(inputs, out_shape, data_format, name):
