@@ -42,16 +42,11 @@ class Yolo_v3:
         #self.mask_placeholders = mask_placeholders
         self.n_classes = n_classes
         self.model_size = model_size
-        #self.max_output_size = max_output_size
-        #self.iou_threshold = iou_threshold
-        #self.confidence_threshold = confidence_threshold
         self.strides = np.array(cfg.YOLO.STRIDES)
         self.anchor_per_scale = cfg.YOLO.ANCHOR_PER_SCALE
         self.iou_loss_thresh  = cfg.YOLO.IOU_LOSS_THRESH
         self.data_format = data_format
         self.trainable = trainable
-
-        #self.__build_placeholders()
 
         try:
             conv_boxes, pred_boxes, xy_offsets = self.__build(inputs)
@@ -71,10 +66,6 @@ class Yolo_v3:
         except:
             raise NotImplementedError("Can not build up yolov3 network!")
 
-    '''
-    def __build_placeholders(self):
-        self.inputs = tf.placeholder(tf.float32, [None, *self.model_size, 3])
-    '''
     
     def __build(self, inputs):
         with tf.variable_scope('yolo_v3_model'):
@@ -147,8 +138,6 @@ class Yolo_v3:
 
     
     def eval(self, batch_size, max_output_size, iou_threshold, confidence_threshold):
-        #pred_bbox_shape = self.pred_lbbox.get_shape().as_list()
-        #batch_size = pred_bbox_shape[0]
 
         pred_lbbox = tf.reshape(self.pred_lbbox, [batch_size, -1, 5+self.n_classes])
         pred_mbbox = tf.reshape(self.pred_mbbox, [batch_size, -1, 5+self.n_classes])
@@ -279,8 +268,8 @@ class Yolo_v3:
         pred_wh = tf.log(tf.clip_by_value(pred_wh, 1e-9, 1e9))
 
         # 1 if (i, yind, xind, j) (j=0,1,2 of three anchors) the label box best closed to the anchor; 0 otherwise
-        #respond_bbox  = label[:, :, :, :, 4:5]
         obj_mask = label[:, :, :, :, 4:5]
+
         # all 0 if above value is 0, smooth one-hot if above value is 1
         label_prob    = label[:, :, :, :, 5:]
 
@@ -299,25 +288,21 @@ class Yolo_v3:
         # (N, 13, 13, 3, 1)
         max_iou = tf.expand_dims(tf.reduce_max(iou, axis=-1), axis=-1)
         no_obj_mask = (1.0 - obj_mask) * tf.cast( max_iou < self.iou_loss_thresh, tf.float32 )
-        #respond_bgd = (1.0 - respond_bbox) * tf.cast( max_iou < self.iou_loss_thresh, tf.float32 )
-        
 
         #obj_loc_loss = obj_mask * bbox_loss_scale * (label_xywh - pred_xywh)**2
-        #obj_loc_loss = respond_bbox * bbox_loss_scale * (label_xywh - pred_xywh)**2
-        obj_xy_loss = tf.reduce_sum(tf.square(label_xy - pred_xy) * obj_mask * box_loss_scale) / batch_size
-        obj_wh_loss = tf.reduce_sum(tf.square(label_wh - pred_wh) * obj_mask * box_loss_scale) / batch_size
+        obj_xy_loss = tf.reduce_sum(tf.square(label_xy - pred_xy) * obj_mask * bbox_loss_scale) / tf.cast(batch_size, dtype=tf.float32)
+        obj_wh_loss = tf.reduce_sum(tf.square(label_wh - pred_wh) * obj_mask * bbox_loss_scale) / tf.cast(batch_size, dtype=tf.float32)
         obj_loc_loss = obj_xy_loss + obj_wh_loss
         
         # !!! Notice this part is gonna be modified
         #obj_conf_loss = obj_mask * tf.square(1- giou)
-        obj_conf_loss = obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(labels=obj_mask, logits=conv_raw_conf)
+        true_conf = obj_mask * giou
+        obj_conf_loss = obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(labels=true_conf, logits=conv_raw_conf)
+        #obj_conf_loss = obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(labels=obj_mask, logits=conv_raw_conf)
         obj_conf_loss = tf.reduce_mean(tf.reduce_sum(obj_conf_loss, axis=[1,2,3,4]))
 
         no_obj_conf_loss = no_obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(labels=obj_mask, logits=conv_raw_conf)
         no_obj_conf_loss = tf.reduce_mean(tf.reduce_sum(no_obj_conf_loss, axis=[1,2,3,4]))
-        
-        #conf_loss = obj_conf_loss + no_obj_conf_loss
-        #conf_loss = tf.reduce_mean(tf.reduce_sum(conf_loss, axis=[1,2,3,4]))
         
         obj_class_loss = obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(labels=label_prob, logits=conv_raw_prob)
         obj_class_loss = tf.reduce_mean(tf.reduce_sum(obj_class_loss, axis=[1,2,3,4]))

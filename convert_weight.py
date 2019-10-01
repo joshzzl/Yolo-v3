@@ -47,7 +47,7 @@ tf.Graph().as_default()
 with tf.name_scope('input'):
     input_data = tf.placeholder(dtype=tf.float32, shape=(1, 416, 416, 3), name='input_data')
     training = tf.placeholder(dtype=tf.bool, name='trainable')
-model = Yolo_v3(inputs=input_data, mask_placeholders=None,
+model = Yolo_v3(inputs=input_data, #mask_placeholders=None,
                 trainable=training, n_classes=80, model_size=(416,416))
 for var in tf.global_variables(scope='yolo_v3_model'):
     var_name = var.op.name

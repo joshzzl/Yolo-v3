@@ -49,8 +49,6 @@ class YoloTrain(object):
 
         with tf.name_scope('define_input'):
             self.input_data   = tf.placeholder(dtype=tf.float32, shape=[None, self.img_size, self.img_size, 3],name='input_data')
-            
-            #self.mask_placeholders = self._build_mask_placeholders(self.output_sizes)
 
             self.label_sbbox  = tf.placeholder(dtype=tf.float32, name='label_sbbox')
             self.label_mbbox  = tf.placeholder(dtype=tf.float32, name='label_mbbox')
@@ -61,7 +59,6 @@ class YoloTrain(object):
             self.trainable     = tf.placeholder(dtype=tf.bool, name='training')
 
         self.model = Yolo_v3(inputs=self.input_data, 
-                                #mask_placeholders=self.mask_placeholders,
                                 trainable=self.trainable, 
                                 n_classes=self.num_classes, 
                                 model_size=(self.trainset.train_input_size, self.trainset.train_input_size))
@@ -96,20 +93,6 @@ class YoloTrain(object):
                                         (self.global_step - warmup_steps) / (train_steps - warmup_steps) * np.pi))
             )
             global_step_update = tf.assign_add(self.global_step, 1.0)
-
-        '''
-        optimizer = tf.train.AdamOptimizer(self.learn_rate)
-        gvs = optimizer.compute_gradients(self.loss)
-        self.gvs = gvs
-        self.train_op = optimizer.apply_gradients(gvs)
-        '''
-        
-        '''
-        clipped_gradients = [(tf.clip_by_value(grad, -1., 1.), var) for grad, var in gvs]
-        grad_check = tf.check_numerics(clipped_gradients, 'check_numerics caught bad gradients')
-        with tf.control_dependencies([grad_check]):
-            self.train_op = optimizer.apply_gradients(clipped_gradients)
-        '''
         
         
         with tf.name_scope("define_weight_decay"):
@@ -153,7 +136,6 @@ class YoloTrain(object):
             tf.summary.scalar("obj_class_loss",  self.obj_class_loss)
             tf.summary.scalar("obj_location_loss", self.obj_loc_loss)
             tf.summary.scalar("total_loss", self.loss)
-            #tf.summary.scalar("total_loss_with_loc", self.loss_with_loc)
 
             logdir = './data/log/'+self.time+'/'
             if not os.path.exists(logdir):
@@ -204,8 +186,6 @@ class YoloTrain(object):
 
             for train_data in pbar:
                 batch_img, label_boxes, boxes, _ = train_data
-                #batch_img, label_boxes, boxes, noobj_masks, _ = train_data
-                #feed_dict = utils.construct_feed_dict(self.mask_placeholders, *noobj_masks)
                 feed_dict = {}
                 feed_dict.update({self.input_data:   batch_img,
                                 self.label_sbbox:  label_boxes[0],
@@ -248,8 +228,6 @@ class YoloTrain(object):
             batch_num = 0
             for test_data in self.testset:
                 batch_img, label_boxes, boxes, _ = test_data
-                #batch_img, label_boxes, boxes, noobj_masks, _ = test_data
-                #feed_dict = utils.construct_feed_dict(self.mask_placeholders, *noobj_masks)
                 feed_dict = {}
                 feed_dict.update({self.input_data:   batch_img,
                                 self.label_sbbox:  label_boxes[0],

@@ -132,7 +132,7 @@ def load_class_names(file_name):
     return class_names
 
 
-def draw_boxes(img_names, boxes_dicts, class_names, model_size, mode='t'):
+def draw_boxes(img_names, boxes_dicts, class_names, model_size, save_dir):
     """Draws detected boxes.
     Args:
         img_names: A list of input images names.
@@ -178,10 +178,7 @@ def draw_boxes(img_names, boxes_dicts, class_names, model_size, mode='t'):
 
         rgb_img = img.convert('RGB')
 
-        if mode=='t':
-            rgb_img.save('./detections/test/detection_' + filename)
-        else:
-            rgb_img.save('./detections/baseline/detection_' + filename)
+        rgb_img.save(save_dir+'detection_' + filename)
 
 
 def draw_frame(frame, frame_size, boxes_dicts, class_names, model_size):

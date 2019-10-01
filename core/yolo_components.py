@@ -84,7 +84,7 @@ def yolo_detection(inputs, n_classes, anchors, img_size,
     x_y_offset = tf.concat([x_offset, y_offset], axis=-1)
     
     xy_offset_output = tf.identity(x_y_offset)
-    xy_offset_output = tf.reshape(xy_offset_output, [grid_size[0], grid_size[1], 1, 2])
+    xy_offset_output = tf.reshape(xy_offset_output, [grid_shape[0], grid_shape[1], 1, 2])
 
     x_y_offset = tf.tile(x_y_offset, [1, n_anchors])
     x_y_offset = tf.reshape(x_y_offset, [1, -1, 2])

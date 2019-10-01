@@ -26,8 +26,8 @@ class Dataset(object):
         self.annot_path  = cfg.TRAIN.ANNOT_PATH if dataset_type == 'train' else cfg.TEST.ANNOT_PATH
         self.input_sizes = cfg.TRAIN.INPUT_SIZE if dataset_type == 'train' else cfg.TEST.INPUT_SIZE
         self.batch_size  = cfg.TRAIN.BATCH_SIZE if dataset_type == 'train' else cfg.TEST.BATCH_SIZE
-        #self.data_aug    = cfg.TRAIN.DATA_AUG   if dataset_type == 'train' else cfg.TEST.DATA_AUG
-        self.data_aug    = False  if dataset_type == 'train' else cfg.TEST.DATA_AUG
+        self.data_aug    = cfg.TRAIN.DATA_AUG   if dataset_type == 'train' else cfg.TEST.DATA_AUG
+        #self.data_aug    = False  if dataset_type == 'train' else cfg.TEST.DATA_AUG
 
         self.train_input_sizes = cfg.TRAIN.INPUT_SIZE
         # hardcode here
@@ -42,7 +42,7 @@ class Dataset(object):
         self.annotations = self.load_annotations(dataset_type)
         self.num_samples = len(self.annotations)
         #self.num_batchs = int(np.ceil(self.num_samples / self.batch_size))
-        self.num_batchs = 200
+        self.num_batchs = 500
         self.batch_count = 0
 
 
@@ -63,7 +63,7 @@ class Dataset(object):
     def __next__(self):
 
         with tf.device('/cpu:0'):
-            #self.train_input_size = random.choice(self.train_input_sizes)
+
             self.train_output_sizes = self.train_input_size // self.strides
 
             batch_image = np.zeros((self.batch_size, self.train_input_size, self.train_input_size, 3))
@@ -81,15 +81,6 @@ class Dataset(object):
             batch_mbboxes = np.zeros((self.batch_size, self.max_bbox_per_scale, 4))
             batch_lbboxes = np.zeros((self.batch_size, self.max_bbox_per_scale, 4))
 
-            '''
-            batch_noobj_mask_sb = np.zeros((self.batch_size, self.train_output_sizes[0], self.train_output_sizes[0],
-                                          self.anchor_per_scale))
-            batch_noobj_mask_mb = np.zeros((self.batch_size, self.train_output_sizes[1], self.train_output_sizes[1],
-                                          self.anchor_per_scale))
-            batch_noobj_mask_lb = np.zeros((self.batch_size, self.train_output_sizes[2], self.train_output_sizes[2],
-                                          self.anchor_per_scale))
-            '''
-
             num = 0
             if self.batch_count < self.num_batchs:
                 while num < self.batch_size:
@@ -98,7 +89,6 @@ class Dataset(object):
                     annotation = self.annotations[index]
                     image, bboxes, img_path = self.parse_annotation(annotation)
                     batch_paths.append(img_path)
-                    #label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes, no_obj_mask = self.preprocess_true_boxes(bboxes)
                     label_sbbox, label_mbbox, label_lbbox, sbboxes, mbboxes, lbboxes = self.preprocess_true_boxes(bboxes)
 
                     batch_image[num, :, :, :] = image
@@ -109,15 +99,10 @@ class Dataset(object):
                     batch_mbboxes[num, :, :] = mbboxes
                     batch_lbboxes[num, :, :] = lbboxes
 
-                    #batch_noobj_mask_sb[num, :, :, :] = no_obj_mask[0]
-                    #batch_noobj_mask_mb[num, :, :, :] = no_obj_mask[1]
-                    #batch_noobj_mask_lb[num, :, :, :] = no_obj_mask[2]
-
                     num += 1
                 self.batch_count += 1
                 return batch_image, [batch_label_sbbox, batch_label_mbbox, batch_label_lbbox], \
                        [batch_sbboxes, batch_mbboxes, batch_lbboxes], batch_paths
-                       #[batch_noobj_mask_sb, batch_noobj_mask_mb, batch_noobj_mask_lb], \
 
             else:
                 self.batch_count = 0
@@ -271,28 +256,6 @@ class Dataset(object):
                 #iou_mask = iou_scale > 0.3
                 #iou_mask = iou_scale > 0.5
 
-                '''
-                if np.any(iou_mask):
-                    xind, yind = np.floor(bbox_xywh_scaled[i, 0:2]).astype(np.int32)
-
-                    max_iou_idx = np.argmax(iou_scale)
-                    #label[i][yind, xind, iou_mask, :] = 0
-                    #label[i][yind, xind, iou_mask, 0:4] = bbox_xywh
-                    #label[i][yind, xind, iou_mask, 4:5] = 1.0
-                    #label[i][yind, xind, iou_mask, 5:] = smooth_onehot
-
-                    label[i][yind, xind, max_iou_idx, :] = 0
-                    label[i][yind, xind, max_iou_idx, 0:4] = bbox_xywh
-                    label[i][yind, xind, max_iou_idx, 4:5] = 1.0
-                    label[i][yind, xind, max_iou_idx, 5:] = smooth_onehot
-
-                    # add this new found box to bboxes_xywh collection
-                    bbox_ind = int(bbox_count[i] % self.max_bbox_per_scale)
-                    bboxes_xywh[i][bbox_ind, :4] = bbox_xywh
-                    bbox_count[i] += 1
-
-                    exist_positive = True
-                '''
             # find the best possible anchor to fit
             best_anchor_ind = np.argmax(np.array(iou).reshape(-1), axis=-1)
             # small/med/large
@@ -301,7 +264,7 @@ class Dataset(object):
             best_anchor = int(best_anchor_ind % self.anchor_per_scale)
             xind, yind = np.floor(bbox_xywh_scaled[best_detect, 0:2]).astype(np.int32)
 
-            label[best_detect][yind, xind, best_anchor, :] = 0
+            label[best_detect][yind, xind, best_anchor, :] = 0.
             label[best_detect][yind, xind, best_anchor, 0:4] = bbox_xywh
             label[best_detect][yind, xind, best_anchor, 4:5] = 1.0
             label[best_detect][yind, xind, best_anchor, 5:] = smooth_onehot
@@ -310,50 +273,6 @@ class Dataset(object):
             bboxes_xywh[best_detect][bbox_ind, :4] = bbox_xywh
             bbox_count[best_detect] += 1 
 
-            '''
-            for i in range(len(iou)):
-                xind, yind = np.floor(bbox_xywh_scaled[i, 0:2]).astype(np.int32)
-                # hardcode the threshold as 0.3
-                iou_less_mask = iou[i] < 0.3
-                no_obj_mask[i][yind, xind, iou_less_mask] = 1.0
-
-            no_obj_mask[best_detect][yind, xind, best_anchor] = 0.
-            '''
-
-            '''
-            if not exist_positive:
-                # find the best possible anchor to fit
-                best_anchor_ind = np.argmax(np.array(iou).reshape(-1), axis=-1)
-                # small/med/large
-                best_detect = int(best_anchor_ind / self.anchor_per_scale)
-                # 0,1,2
-                best_anchor = int(best_anchor_ind % self.anchor_per_scale)
-                xind, yind = np.floor(bbox_xywh_scaled[best_detect, 0:2]).astype(np.int32)
-
-                label[best_detect][yind, xind, best_anchor, :] = 0
-                label[best_detect][yind, xind, best_anchor, 0:4] = bbox_xywh
-                label[best_detect][yind, xind, best_anchor, 4:5] = 1.0
-                label[best_detect][yind, xind, best_anchor, 5:] = smooth_onehot
-
-                bbox_ind = int(bbox_count[best_detect] % self.max_bbox_per_scale)
-                bboxes_xywh[best_detect][bbox_ind, :4] = bbox_xywh
-                bbox_count[best_detect] += 1 
-
-                for i in range(len(iou)):
-                    xind, yind = np.floor(bbox_xywh_scaled[i, 0:2]).astype(np.int32)
-                    # hardcode the threshold as 0.3
-                    iou_less_mask = iou[i] < 0.3
-                    no_obj_mask[i][yind, xind, iou_less_mask] = 1.0
-
-                no_obj_mask[best_detect][yind, xind, best_anchor] = 0.
-
-            else:
-                for i in range(len(iou)):
-                    xind, yind = np.floor(bbox_xywh_scaled[i, 0:2]).astype(np.int32)
-                    # hardcode the threshold as 0.3
-                    iou_less_mask = iou[i] < 0.3
-                    no_obj_mask[i][yind, xind, iou_less_mask] = 1.0
-            '''
         #print(bbox_count)
         # each item here is (size, size, 3, 85) and there are 3 ele
         label_sbbox, label_mbbox, label_lbbox = label

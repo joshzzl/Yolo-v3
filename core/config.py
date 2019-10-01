@@ -44,8 +44,8 @@ __C.TRAIN.DATA_AUG              = True
 __C.TRAIN.LEARN_RATE_INIT       = 1e-4
 __C.TRAIN.LEARN_RATE_END        = 1e-6
 __C.TRAIN.WARMUP_EPOCHS         = 2
-__C.TRAIN.FISRT_STAGE_EPOCHS    = 5
-__C.TRAIN.SECOND_STAGE_EPOCHS   = 20
+__C.TRAIN.FISRT_STAGE_EPOCHS    = 10
+__C.TRAIN.SECOND_STAGE_EPOCHS   = 40
 __C.TRAIN.INITIAL_WEIGHT        = "./checkpoint/yolov3_coco_demo.ckpt"
 
 
@@ -54,7 +54,7 @@ __C.TRAIN.INITIAL_WEIGHT        = "./checkpoint/yolov3_coco_demo.ckpt"
 __C.TEST                        = edict()
 
 #__C.TEST.ANNOT_PATH             = "./data/dataset/voc_test.txt"
-__C.TEST.ANNOT_PATH             = "./data/dataset/train.txt"
+__C.TEST.ANNOT_PATH             = "./data/dataset/test.txt"
 __C.TEST.BATCH_SIZE             = 2
 __C.TEST.INPUT_SIZE             = 544
 __C.TEST.DATA_AUG               = False

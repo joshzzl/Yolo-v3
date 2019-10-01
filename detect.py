@@ -15,6 +15,8 @@ Note that only one video can be processed at one run.
 import tensorflow as tf
 import sys
 import cv2
+import time
+import os
 import numpy as np
 import core.utils as utils
 
@@ -39,13 +41,24 @@ def main(type, iou_threshold, confidence_threshold, checkpoint_fn):
         raise ValueError("Inappropriate data type.")
     
     if checkpoint_fn=='.':
-        checkpoint_fn = _MODEL_CKPT
+        checkpoint_fn = _MODEL_CKPT+t+
+
+    t = time.strftime('%Y-%m-%d-%H-%M-%S', time.localtime(time.time()))
+    detection_dir = './detection/'+t+'/'
+    if not os.path.exists(detection_dir):
+        os.mkdir(detection_dir)
+    test_detection_dir = detection_dir+'test/'
+    baseline_detection_dir = detection_dir+'baseline/'
+    if not os.path.exists(test_detection_dir):
+        os.mkdir(test_detection_dir)
+    if not os.path.exists(baseline_detection_dir):
+        os.mkdir(baseline_detection_dir)
 
     class_names = utils.load_class_names(_CLASS_NAMES_FILE)
     n_classes = len(class_names)
 
     inputs = tf.placeholder(dtype=tf.float32, shape=[None, *_MODEL_SIZE, 3])
-    mask_placeholders = utils.build_mask_placeholders(_OUTPUT_SIZE)
+    #mask_placeholders = utils.build_mask_placeholders(_OUTPUT_SIZE)
 
     label_sbbox  = tf.placeholder(dtype=tf.float32, name='label_sbbox')
     label_mbbox  = tf.placeholder(dtype=tf.float32, name='label_mbbox')
@@ -55,7 +68,7 @@ def main(type, iou_threshold, confidence_threshold, checkpoint_fn):
     true_lbboxes = tf.placeholder(dtype=tf.float32, name='lbboxes')
 
     model = Yolo_v3(inputs=inputs, 
-                    mask_placeholders=mask_placeholders,
+                    #mask_placeholders=mask_placeholders,
                     trainable=False, 
                     n_classes=n_classes, 
                     model_size=_MODEL_SIZE)
@@ -65,7 +78,7 @@ def main(type, iou_threshold, confidence_threshold, checkpoint_fn):
         model.compute_loss(label_sbbox, label_mbbox, label_lbbox,\
                            true_sbboxes, true_mbboxes, true_lbboxes)
     
-    loss = obj_conf_loss + no_obj_conf_loss + 0.05 * obj_class_loss
+    loss = obj_conf_loss + no_obj_conf_loss + obj_class_loss + obj_loc_loss
 
     #model.eval()
     
@@ -84,7 +97,7 @@ def main(type, iou_threshold, confidence_threshold, checkpoint_fn):
     with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
         i = 0
         for batch in batches:
-            if i >= 10:
+            if i >= 20:
                 break
             print()
             
@@ -92,8 +105,9 @@ def main(type, iou_threshold, confidence_threshold, checkpoint_fn):
             saver.restore(sess, checkpoint_fn)
             
             model.eval(batch_size, _MAX_OUTPUT_SIZE, iou_threshold, confidence_threshold)
-            batch_img, label_boxes, boxes, noobj_masks, img_paths = batch
-            feed_dict = utils.construct_feed_dict(mask_placeholders, *noobj_masks)
+            batch_img, label_boxes, boxes, img_paths = batch
+            #feed_dict = utils.construct_feed_dict(mask_placeholders, *noobj_masks)
+            feed_dict = dict()
             feed_dict.update({inputs:   batch_img,
                               label_sbbox:  label_boxes[0],
                               label_mbbox:  label_boxes[1],
@@ -104,14 +118,17 @@ def main(type, iou_threshold, confidence_threshold, checkpoint_fn):
             boxes_dicts, detect_loss = sess.run([model.boxes_dicts, loss], feed_dict=feed_dict)
             
             print("Batch: {0}; Loss: {1:.2f}".format(i, detect_loss))
-            utils.draw_boxes(img_paths, boxes_dicts, class_names, _MODEL_SIZE, mode='t')
+            utils.draw_boxes(img_paths, boxes_dicts, class_names, _MODEL_SIZE, test_detection_dir)
+
+############################### Bar Between Test and Baseline solutions ######################
 
             saver = tf.train.Saver(tf.global_variables(scope='yolo_v3_model'))
             saver.restore(sess, _MODEL_CKPT)
             
             model.eval(batch_size, _MAX_OUTPUT_SIZE, iou_threshold, confidence_threshold)
-            batch_img, label_boxes, boxes, noobj_masks, img_paths = batch
-            feed_dict = utils.construct_feed_dict(mask_placeholders, *noobj_masks)
+            batch_img, label_boxes, boxes, img_paths = batch
+            #feed_dict = utils.construct_feed_dict(mask_placeholders, *noobj_masks)
+            feed_dict = {}
             feed_dict.update({inputs:   batch_img,
                               label_sbbox:  label_boxes[0],
                               label_mbbox:  label_boxes[1],
@@ -122,27 +139,8 @@ def main(type, iou_threshold, confidence_threshold, checkpoint_fn):
             baseline_boxes_dicts, baseline_detect_loss = sess.run([model.boxes_dicts, loss], feed_dict=feed_dict)
             
             print("Batch: {0}; Baseline Loss: {1:.2f}".format(i, baseline_detect_loss))
-            utils.draw_boxes(img_paths, baseline_boxes_dicts, class_names, _MODEL_SIZE, mode='b')
-            '''
-            pred_lbbox, pred_mbbox, pred_sbbox, loss, \
-                obj_conf, no_obj_conf, obj_prob = \
-                sess.run([model.pred_lbbox, model.pred_mbbox, model.pred_lbbox,\
-                          loss, obj_conf_loss, no_obj_conf_loss, obj_class_loss], \
-                          feed_dict=feed_dict)'''
-            
+            utils.draw_boxes(img_paths, baseline_boxes_dicts, class_names, _MODEL_SIZE, baseline_detection_dir)
 
-            '''
-            pred_lbbox = np.reshape(pred_lbbox, [batch_size, -1, 5+n_classes])
-            pred_mbbox = np.reshape(pred_mbbox, [batch_size, -1, 5+n_classes])
-            pred_sbbox = np.reshape(pred_sbbox, [batch_size, -1, 5+n_classes])
-            pred_boxes = np.concatenate([pred_lbbox, pred_mbbox, pred_sbbox], axis=1)
-
-            pred_boxes = utils.build_boxes(pred_boxes)
-            boxes_dicts = utils.non_max_suppression(pred_boxes, n_classes=n_classes,\
-                max_output_size=_MAX_OUTPUT_SIZE, iou_threshold=iou_threshold,\
-                confidence_threshold=confidence_threshold)
-            boxes_dicts = sess.run(boxes_dicts)'''
-            
             i += 1
 
     print('Detections have been saved successfully.')
