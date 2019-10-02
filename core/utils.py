@@ -180,6 +180,55 @@ def draw_boxes(img_names, boxes_dicts, class_names, model_size, save_dir):
 
         rgb_img.save(save_dir+'detection_' + filename)
 
+# shape: 'r' for rectangle, 'e' for ellipse
+def draw_boxes_new(img_names, boxes_dicts, class_names, model_size, save_dir, shape='r'):
+    """Draws detected boxes.
+    Args:
+        img_names: A list of input images names.
+        boxes_dict: A class-to-boxes dictionary.
+        class_names: A class names list.
+        model_size: The input size of the model.
+    Returns:
+        None.
+    """
+    colors = ((np.array(color_palette("hls", 80)) * 255)).astype(np.uint8)
+    for num, img_name, boxes_dict in zip(range(len(img_names)), img_names,
+                                         boxes_dicts):
+        filename = os.path.basename(img_name)
+        img = Image.open(img_name)
+        draw = ImageDraw.Draw(img)
+        font = ImageFont.truetype(font='./data/fonts/futur.ttf',
+                                  size=(img.size[0] + img.size[1]) // 100)
+        resize_factor = \
+            (img.size[0] / model_size[0], img.size[1] / model_size[1])
+        for cls in range(len(class_names)):
+            boxes = boxes_dict[cls]
+            if np.size(boxes) != 0:
+                color = colors[cls]
+                for box in boxes:
+                    xy, confidence = box[:4], box[4]
+                    xy = [xy[i] * resize_factor[i % 2] for i in range(4)]
+
+                    if shape=='r':
+                        draw.rectangle(xy, outline=tuple(color), width=2)
+                    else:
+                        draw.ellipse(xy, outline=tuple(color), width=2)
+                    
+                    text = '{} {:.1f}%'.format(class_names[cls],
+                                               confidence * 100)
+                    text_size = draw.textsize(text, font=font)
+                    xm, y0 = int((xy[0]+xy[2])/2), xy[1]
+                    left = int(text_size[0]/2)
+                    right = text_size[0] - left
+                    draw.rectangle([xm-left, y0 - text_size[1], xm+right, y0], fill=tuple(color))
+                    draw.text((xm-left, y0 - text_size[1]), text, fill='black',
+                              font=font)
+                    print('{} {:.2f}%'.format(class_names[cls],
+                                              confidence * 100))
+
+        rgb_img = img.convert('RGB')
+
+        rgb_img.save(save_dir+'detection_' + filename)
 
 def draw_frame(frame, frame_size, boxes_dicts, class_names, model_size):
     """Draws detected boxes in a video frame.

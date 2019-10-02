@@ -3,6 +3,7 @@
 # Date: Sept 12, 2019
 
 import numpy as np
+import math
 import tensorflow as tf
 import core.utils as utils
 from core.yolo_components import yolo_convolutional,\
@@ -184,7 +185,7 @@ class Yolo_v3:
         inter_area = inter_section[..., 0] * inter_section[..., 1]
         union_area = boxes1_area + boxes2_area - inter_area
         iou = tf.div_no_nan(inter_area, union_area)
-        area_ar = [boxes1_area, boxes2_area, inter_area, union_area]
+        #area_ar = [boxes1_area, boxes2_area, inter_area, union_area]
 
 
         enclose_left_up = tf.minimum(boxes1[..., :2], boxes2[..., :2])
@@ -193,10 +194,57 @@ class Yolo_v3:
         enclose_area = enclose[..., 0] * enclose[..., 1]
         giou = iou - 1.0 * tf.div_no_nan((enclose_area - union_area), enclose_area)
 
-        return giou, iou, area_ar, enclose_area
+        return giou, iou #area_ar, enclose_area
 
-    # boxes1: (N, 13, 13, 3, 1, 4); boxes2: (N, 1, 1, 1, 150, 4)
+    # boxes1: (N, 13, 13, 3, 1, 4) - pred; boxes2: (N, 1, 1, 1, 150, 4) - GT
     # return (N, 13, 13, 3, 150)
+    def bbox_iou_circle(self, boxes1, boxes2):
+
+        boxes1_area = boxes1[..., 2] * boxes1[..., 3]
+        boxes2_area = boxes2[..., 2] * boxes2[..., 3]
+
+        # boxes [...,0:2] x0,y0; [...,2:4] x1,y1
+        boxes1 = tf.concat([boxes1[..., :2] - boxes1[..., 2:] * 0.5,
+                            boxes1[..., :2] + boxes1[..., 2:] * 0.5], axis=-1)
+        boxes2 = tf.concat([boxes2[..., :2] - boxes2[..., 2:] * 0.5,
+                            boxes2[..., :2] + boxes2[..., 2:] * 0.5], axis=-1)
+
+        # constant pi / 4
+        C = tf.constant(math.pi/4.)
+
+        # three cases: pred enclose GT; GT enclose pred; neither
+        pred_enc_GT_mask = tf.cast(boxes1[...,0]<boxes2[...,0], tf.float32) *\
+                           tf.cast(boxes1[...,1]<boxes2[...,1], tf.float32) *\
+                           tf.cast(boxes1[...,2]>boxes2[...,2], tf.float32) *\
+                           tf.cast(boxes1[...,3]>boxes2[...,3], tf.float32)
+
+        GT_enc_pred_mask = tf.cast(boxes1[...,0]>boxes2[...,0], tf.float32) *\
+                           tf.cast(boxes1[...,1]>boxes2[...,1], tf.float32) *\
+                           tf.cast(boxes1[...,2]<boxes2[...,2], tf.float32) *\
+                           tf.cast(boxes1[...,3]<boxes2[...,3], tf.float32)
+
+        part_intersect_mask = 1.0 - GT_enc_pred_mask - pred_enc_GT_mask
+
+        left_up = tf.maximum(boxes1[..., :2], boxes2[..., :2])
+        right_down = tf.minimum(boxes1[..., 2:], boxes2[..., 2:])
+
+        inter_section = tf.maximum(right_down - left_up, 0.0)
+        inter_area = inter_section[..., 0] * inter_section[..., 1]
+        union_area = boxes1_area + boxes2_area - inter_area
+
+        # case 1 IOU:
+        pred_enc_GT_iou = pred_enc_GT_mask * tf.div_no_nan(inter_area, C * union_area)
+        # case 2 IOU:
+        GT_enc_pred_iou = GT_enc_pred_mask * tf.div_no_nan(C * inter_area, union_area)
+        # case 3 IOU
+        part_intersect_iou = part_intersect_mask * tf.div_no_nan(C * inter_area, \
+            (C * boxes1_area + boxes2_area - C * inter_area))
+
+        #iou = 1.0 * tf.div_no_nan(inter_area, union_area)
+        iou_circle = pred_enc_GT_iou + GT_enc_pred_iou + part_intersect_iou
+
+        return iou_circle
+
     def bbox_iou(self, boxes1, boxes2):
 
         boxes1_area = boxes1[..., 2] * boxes1[..., 3]
@@ -273,8 +321,8 @@ class Yolo_v3:
         # all 0 if above value is 0, smooth one-hot if above value is 1
         label_prob    = label[:, :, :, :, 5:]
 
-        giou, mid_iou, area_ar, enclose_area = self.bbox_giou(pred_xywh, label_xywh)
-        giou = tf.expand_dims(giou, axis=-1) 
+        giou, mid_iou = self.bbox_giou(pred_xywh, label_xywh)
+        #giou = tf.expand_dims(giou, axis=-1) 
 
         input_size = tf.cast(input_size, tf.float32)
 
@@ -283,8 +331,10 @@ class Yolo_v3:
         bbox_loss_scale = 2.0 - 1.0 * label_xywh[:, :, :, :, 2:3] * label_xywh[:, :, :, :, 3:4] / (input_size ** 2)
 
         ###############################################################################################################
-        # (N, 13, 13, 3, 150)
-        iou = self.bbox_iou(pred_xywh[:, :, :, :, np.newaxis, :], bboxes[:, np.newaxis, np.newaxis, np.newaxis, :, :])
+        # (N, 13, 13, 3, 150); 2 versions of IOU
+        #iou = self.bbox_iou(pred_xywh[:, :, :, :, np.newaxis, :], bboxes[:, np.newaxis, np.newaxis, np.newaxis, :, :])
+        iou = self.bbox_iou_circle(pred_xywh[:, :, :, :, np.newaxis, :], bboxes[:, np.newaxis, np.newaxis, np.newaxis, :, :])
+        
         # (N, 13, 13, 3, 1)
         max_iou = tf.expand_dims(tf.reduce_max(iou, axis=-1), axis=-1)
         no_obj_mask = (1.0 - obj_mask) * tf.cast( max_iou < self.iou_loss_thresh, tf.float32 )
@@ -296,9 +346,9 @@ class Yolo_v3:
         
         # !!! Notice this part is gonna be modified
         #obj_conf_loss = obj_mask * tf.square(1- giou)
-        true_conf = obj_mask * giou
-        obj_conf_loss = obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(labels=true_conf, logits=conv_raw_conf)
-        #obj_conf_loss = obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(labels=obj_mask, logits=conv_raw_conf)
+        #true_conf = obj_mask * mid_iou
+        #obj_conf_loss = obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(labels=true_conf, logits=conv_raw_conf)
+        obj_conf_loss = obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(labels=obj_mask, logits=conv_raw_conf)
         obj_conf_loss = tf.reduce_mean(tf.reduce_sum(obj_conf_loss, axis=[1,2,3,4]))
 
         no_obj_conf_loss = no_obj_mask * tf.nn.sigmoid_cross_entropy_with_logits(labels=obj_mask, logits=conv_raw_conf)

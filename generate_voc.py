@@ -1,8 +1,9 @@
 
-from pycocotools.coco import COCO
+#from pycocotools.coco import COCO
 import shutil
 import random
 import os
+import sys
 import wget
 
 
@@ -21,6 +22,17 @@ _TRAIN_FILENAME = 'train.txt'
 _TEST_FILENAME = 'test.txt'
 
 _COCO_NAMES = "./data/classes/coco.names"
+
+_DETECT_FN = 'select.txt'
+_SELECT_DIR = './data/images/select/'
+
+def create_detect_voc(voc_write_path, file_name, img_dir):
+    with open(voc_write_path+file_name, 'w') as f:
+        fn_lst = os.listdir(img_dir)
+        for fn in fn_lst:
+            f.write(img_dir+fn+'\n')
+        f.close()
+
 
 
 def create_voc_file(voc_write_path, file_name, img_write_path, 
@@ -79,6 +91,8 @@ def create_voc_file(voc_write_path, file_name, img_write_path,
     Main
 '''
 if __name__=='__main__':
-    
-    create_voc_file(_WRITE_FOLDER, _TRAIN_FILENAME, _TRAIN_IMAGE_WRITE, _TRAIN_CAT_SELECT)
-    create_voc_file(_WRITE_FOLDER, _TEST_FILENAME, _TEST_IMAGE_WRITE, _TEST_CAT_SELECT)
+    if sys.argv[1]=='d':
+        create_voc_file(_WRITE_FOLDER, _TRAIN_FILENAME, _TRAIN_IMAGE_WRITE, _TRAIN_CAT_SELECT)
+        create_voc_file(_WRITE_FOLDER, _TEST_FILENAME, _TEST_IMAGE_WRITE, _TEST_CAT_SELECT)
+    elif sys.argv[1]=='s':
+        create_detect_voc(_WRITE_FOLDER, _DETECT_FN, _SELECT_DIR)
