@@ -59,7 +59,7 @@ def load_images(img_names, model_size):
         img = img.resize(size=model_size)
         img = np.array(img, dtype=np.float32)
         img = np.expand_dims(img[:, :, :3], axis=0)
-        imgs.append(img)
+        imgs.append(img / 255.)
 
     imgs = np.concatenate(imgs)
 
@@ -261,6 +261,53 @@ def draw_frame(frame, frame_size, boxes_dicts, class_names, model_size):
                               color[::-1], thickness=cv2.FILLED)
                 cv2.putText(frame, class_names[cls], (xy[0], xy[1] - baseline),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 0), 1)
+
+def draw_frame_new(frame, frame_size, boxes_dicts, class_names, model_size, shape='r'):
+    """Draws detected boxes in a video frame.
+    Args:
+        frame: A video frame.
+        frame_size: A tuple of (frame width, frame height).
+        boxes_dicts: A class-to-boxes dictionary.
+        class_names: A class names list.
+        model_size:The input size of the model.
+    Returns:
+        None.
+    """
+    boxes_dict = boxes_dicts[0]
+    resize_factor = (frame_size[0] / model_size[1], frame_size[1] / model_size[0])
+    colors = ((np.array(color_palette("hls", 80)) * 255)).astype(np.uint8)
+    for cls in range(len(class_names)):
+        boxes = boxes_dict[cls]
+        color = colors[cls]
+        color = tuple([int(x) for x in color])
+        if np.size(boxes) != 0:
+            for box in boxes:
+                xy = box[:4]
+                xy = [int(xy[i] * resize_factor[i % 2]) for i in range(4)]
+                if shape=='r':
+                    cv2.rectangle(frame, (xy[0], xy[1]), (xy[2], xy[3]), color[::-1], 2)
+                    (text_width, text_height), baseline = cv2.getTextSize(class_names[cls],
+                                                                          cv2.FONT_HERSHEY_SIMPLEX,
+                                                                          0.75, 1)
+                    cv2.rectangle(frame, (xy[0], xy[1]),
+                                  (xy[0] + text_width, xy[1] - text_height - baseline),
+                                  color[::-1], thickness=cv2.FILLED)
+                    cv2.putText(frame, class_names[cls], (xy[0], xy[1] - baseline),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 0), 1)
+                else:
+                    axes = int((xy[2]-xy[0])/2), int((xy[3]-xy[1])/2)
+                    center = int((xy[2]+xy[0])/2), int((xy[3]+xy[1])/2)
+                    cv2.ellipse(frame, center, axes, 0, 0, 360, color[::-1], 2) 
+
+                    (text_width, text_height), baseline = cv2.getTextSize(class_names[cls],
+                                                                          cv2.FONT_HERSHEY_SIMPLEX,
+                                                                          0.75, 1)
+                    shift = axes[0] - int(text_width/2)
+                    cv2.rectangle(frame, (xy[0]+shift, xy[1]),
+                                  (xy[0]+shift+text_width, xy[1] - text_height - baseline),
+                                  color[::-1], thickness=cv2.FILLED)
+                    cv2.putText(frame, class_names[cls], (xy[0]+shift, xy[1] - baseline),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 0), 1)
 
 ##################################################################################################
 

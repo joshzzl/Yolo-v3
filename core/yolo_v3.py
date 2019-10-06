@@ -156,8 +156,7 @@ class Yolo_v3:
 
         self.boxes_dicts = boxes_dicts
     
-
-
+    
     def focal(self, target, actual, alpha=1, gamma=2):
         focal_loss = alpha * tf.pow(tf.abs(target - actual), gamma)
         return focal_loss
